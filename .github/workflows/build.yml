@@ -32,9 +32,10 @@ jobs:
 
       - name: Auto-Heal Missing Oppo Vendor Headers
         run: |
-          # Create dummy/stub header with necessary definitions for oppo_phoenix
-          mkdir -p vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
-          cat << 'EOF' > vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h
+          # Create header in core include directories
+          mkdir -p include/linux include/soc/oppo
+
+          cat << 'EOF' > include/linux/oppo_phoenix.h
           #ifndef _OPPO_PHOENIX_H
           #define _OPPO_PHOENIX_H
 
@@ -50,6 +51,9 @@ jobs:
 
           #endif
           EOF
+
+          # Copy stub to alternate header paths
+          cp include/linux/oppo_phoenix.h include/soc/oppo/oppo_phoenix.h 2>/dev/null || true
 
       - name: Auto-Heal Defconfig & Compile Kernel
         run: |
@@ -72,14 +76,16 @@ jobs:
 
           make O=out $DEFCONFIG
 
-          # Compile Kernel with Native MTK GCC Compiler
+          # Force-include oppo_phoenix.h stub via KCFLAGS
+          STUB_HEADER="$(pwd)/include/linux/oppo_phoenix.h"
+
           make -j$(nproc --all) O=out \
             HOSTCC=gcc \
             HOSTCXX=g++ \
             HOSTCFLAGS="-fcommon" \
             HOSTCXXFLAGS="-fcommon" \
             CC=aarch64-linux-android-gcc \
-            KCFLAGS="-Wno-error -fcommon -w" \
+            KCFLAGS="-Wno-error -fcommon -w -include ${STUB_HEADER}" \
             2>&1 | tee build.log
 
       - name: Auto-Heal DTB & Collect Artifacts
