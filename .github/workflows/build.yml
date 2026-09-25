@@ -30,14 +30,14 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
-      - name: Auto-Patch Oppo Phoenix in init/main.c & Stub Headers
+      - name: Auto-Patch Oppo Phoenix in Source & Create Complete Stub
         run: |
-          echo "Patching init/main.c to remove oppo_phoenix lines..."
+          echo "Cleaning Oppo Phoenix calls from panic.c and main.c..."
           
-          # Delete all problematic phx_set_boot_stage lines from init/main.c
-          sed -i '/phx_set_boot_stage/d' init/main.c || true
+          # Clean all phx_ calls from panic.c and main.c
+          sed -i '/phx_set_boot_/d' kernel/panic.c init/main.c || true
 
-          # Create stub headers in include directories
+          # Create full stub headers with all missing defines
           mkdir -p include/linux include/soc/oppo vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
 
           cat << 'EOF' > include/linux/oppo_phoenix.h
@@ -45,6 +45,9 @@ jobs:
           #define _OPPO_PHOENIX_H
 
           #define phx_set_boot_stage(...) do {} while (0)
+          #define phx_set_boot_error(...) do {} while (0)
+          #define phx_set_boot_info(...) do {} while (0)
+
           #define KERNEL_MM_INIT_DONE 0
           #define KERNEL_LOCAL_IRQ_ENABLE 1
           #define KERNEL_DELAYACCT_INIT_DONE 2
@@ -52,6 +55,13 @@ jobs:
           #define KERNEL_DO_INITCALLS_DONE 4
           #define KERNEL_INIT_DONE 5
           #define KERNEL_DO_BASIC_SETUP_DONE 6
+
+          #define ERROR_KERNEL_PANIC 0
+          #define ERROR_INT 0
+          #define ERROR_AEE 0
+          #define ERROR_KE 0
+          #define ERROR_NE 0
+          #define ERROR_JE 0
 
           #endif
           EOF
