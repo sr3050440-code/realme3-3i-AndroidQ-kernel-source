@@ -30,17 +30,19 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
-      - name: Auto-Heal Missing Oppo Vendor Headers
+      - name: Auto-Patch Oppo Phoenix in init/main.c & Stub Headers
         run: |
-          # Create header in core include directories
-          mkdir -p include/linux include/soc/oppo
+          echo "Patching init/main.c to remove oppo_phoenix calls..."
+          # Strip phx_set_boot_stage calls directly from init/main.c
+          sed -i 's/phx_set_boot_stage([^)]*);/\/* phx_disabled *\/;/g' init/main.c || true
+
+          # Create dummy headers across all possible include paths
+          mkdir -p include/linux include/soc/oppo vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
 
           cat << 'EOF' > include/linux/oppo_phoenix.h
           #ifndef _OPPO_PHOENIX_H
           #define _OPPO_PHOENIX_H
-
           #define phx_set_boot_stage(...) do {} while (0)
-
           #define KERNEL_MM_INIT_DONE 0
           #define KERNEL_LOCAL_IRQ_ENABLE 1
           #define KERNEL_DELAYACCT_INIT_DONE 2
@@ -48,12 +50,11 @@ jobs:
           #define KERNEL_DO_INITCALLS_DONE 4
           #define KERNEL_INIT_DONE 5
           #define KERNEL_DO_BASIC_SETUP_DONE 6
-
           #endif
           EOF
 
-          # Copy stub to alternate header paths
           cp include/linux/oppo_phoenix.h include/soc/oppo/oppo_phoenix.h 2>/dev/null || true
+          cp include/linux/oppo_phoenix.h vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h 2>/dev/null || true
 
       - name: Auto-Heal Defconfig & Compile Kernel
         run: |
@@ -76,16 +77,14 @@ jobs:
 
           make O=out $DEFCONFIG
 
-          # Force-include oppo_phoenix.h stub via KCFLAGS
-          STUB_HEADER="$(pwd)/include/linux/oppo_phoenix.h"
-
+          # Compile Kernel with extra flags
           make -j$(nproc --all) O=out \
             HOSTCC=gcc \
             HOSTCXX=g++ \
             HOSTCFLAGS="-fcommon" \
             HOSTCXXFLAGS="-fcommon" \
             CC=aarch64-linux-android-gcc \
-            KCFLAGS="-Wno-error -fcommon -w -include ${STUB_HEADER}" \
+            KCFLAGS="-Wno-error -fcommon -w" \
             2>&1 | tee build.log
 
       - name: Auto-Heal DTB & Collect Artifacts
@@ -113,6 +112,7 @@ jobs:
 
       - name: Upload Error Log
         if: always()
+        uses: always()
         uses: actions/upload-artifact@v4
         with:
           name: Kernel-Build-Log
