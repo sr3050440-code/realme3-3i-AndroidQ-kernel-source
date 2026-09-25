@@ -30,15 +30,17 @@ jobs:
 
       - name: Auto-Patch Oppo Phoenix & Create Missing Stubs
         run: |
-          echo "Completely removing oppo_fp_drivers and cleaning Kconfig references..."
+          echo "Completely removing oppo_fp_drivers and cleaning references..."
           rm -rf drivers/input/oppo_fp_drivers || true
           rm -rf drivers/trust/oppo_fp_drivers || true
           
-          # Kconfig aur Makefiles se references hatao taaki error na aaye
           sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
           sed -i '/oppo_fp_drivers/d' drivers/trust/Kconfig || true
           sed -i '/oppo_fp_drivers/d' drivers/trust/Makefile || true
+
+          # Skip failing display private API calls
+          find drivers/misc/mediatek/video/ -type f -name "Makefile" -exec sed -i 's/.*oppo_display_private_api.*//g' {} + || true
 
           mkdir -p include/soc/qcom
           cat << 'EOF' > include/soc/qcom/scm.h
