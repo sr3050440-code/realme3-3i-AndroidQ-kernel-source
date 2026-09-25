@@ -20,7 +20,7 @@ jobs:
       - name: Setup Build Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev libncurses-dev zip libgnutls28-dev python2 python3
+          sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev libncurses-dev zip libgnutls28-dev python3 python-is-python3
 
       - name: Download Toolchains (Clang & GCC 4.9)
         run: |
@@ -76,7 +76,7 @@ jobs:
           # Auto-Healing: Append DTB to Image.gz if Image.gz-dtb was not produced automatically
           if [ ! -f release/Image.gz-dtb ] && [ -f release/Image.gz ]; then
             DTB_FILE=$(find out/arch/arm64/boot/dts/ -name "*.dtb" | head -n 1)
-            if [ -n "$DTB_FILE" ]; then
+            if [ -n "$DTB_FILE" ]; me
               echo "Auto-Healing: Stitching Image.gz with DTB..."
               cat release/Image.gz "$DTB_FILE" > release/Image.gz-dtb
             fi
