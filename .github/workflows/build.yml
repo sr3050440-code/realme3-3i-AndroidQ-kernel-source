@@ -32,16 +32,18 @@ jobs:
 
       - name: Auto-Patch Oppo Phoenix in init/main.c & Stub Headers
         run: |
-          echo "Patching init/main.c to remove oppo_phoenix calls..."
-          # Strip phx_set_boot_stage calls directly from init/main.c
-          sed -i 's/phx_set_boot_stage([^)]*);/\/* phx_disabled *\/;/g' init/main.c || true
+          echo "Patching init/main.c to remove oppo_phoenix lines..."
+          
+          # Delete all problematic phx_set_boot_stage lines from init/main.c
+          sed -i '/phx_set_boot_stage/d' init/main.c || true
 
-          # Create dummy headers across all possible include paths
+          # Create stub headers in include directories
           mkdir -p include/linux include/soc/oppo vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
 
           cat << 'EOF' > include/linux/oppo_phoenix.h
           #ifndef _OPPO_PHOENIX_H
           #define _OPPO_PHOENIX_H
+
           #define phx_set_boot_stage(...) do {} while (0)
           #define KERNEL_MM_INIT_DONE 0
           #define KERNEL_LOCAL_IRQ_ENABLE 1
@@ -50,6 +52,7 @@ jobs:
           #define KERNEL_DO_INITCALLS_DONE 4
           #define KERNEL_INIT_DONE 5
           #define KERNEL_DO_BASIC_SETUP_DONE 6
+
           #endif
           EOF
 
@@ -77,14 +80,16 @@ jobs:
 
           make O=out $DEFCONFIG
 
-          # Compile Kernel with extra flags
+          # Force include stub header & compile kernel
+          STUB_HEADER="$(pwd)/include/linux/oppo_phoenix.h"
+
           make -j$(nproc --all) O=out \
             HOSTCC=gcc \
             HOSTCXX=g++ \
             HOSTCFLAGS="-fcommon" \
             HOSTCXXFLAGS="-fcommon" \
             CC=aarch64-linux-android-gcc \
-            KCFLAGS="-Wno-error -fcommon -w" \
+            KCFLAGS="-Wno-error -fcommon -w -include ${STUB_HEADER}" \
             2>&1 | tee build.log
 
       - name: Auto-Heal DTB & Collect Artifacts
@@ -112,7 +117,6 @@ jobs:
 
       - name: Upload Error Log
         if: always()
-        uses: always()
         uses: actions/upload-artifact@v4
         with:
           name: Kernel-Build-Log
