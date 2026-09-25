@@ -75,7 +75,7 @@ jobs:
           #endif
           EOF
 
-          # Oppo Phoenix Stub
+          # Oppo Phoenix Stub with explicit error macros
           cat << 'EOF' > include/linux/oppo_phoenix.h
           #ifndef _OPPO_PHOENIX_H
           #define _OPPO_PHOENIX_H
@@ -100,6 +100,17 @@ jobs:
           cp include/linux/oppo_phoenix.h include/soc/oppo/oppo_phoenix.h 2>/dev/null || true
           cp include/linux/oppo_phoenix.h vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h 2>/dev/null || true
 
+          # Clean up problematic panic calls in kernel/panic.c
+          python3 -c "
+          path = 'kernel/panic.c'
+          with open(path, 'r') as f:
+              content = f.read()
+          content = content.replace('phx_set_boot_error(ERROR_INT);', '// phx_set_boot_error(ERROR_INT);')
+          content = content.replace('phx_set_boot_error', '// phx_set_boot_error')
+          with open(path, 'w') as f:
+              f.write(content)
+          " || true
+
       - name: Auto-Heal Defconfig & Compile Kernel
         run: |
           set -o pipefail
@@ -118,7 +129,6 @@ jobs:
           echo "Selected Defconfig: $DEFCONFIG"
           make O=out $DEFCONFIG
           
-          # Force compiler to include custom stub directories globally so no header is ever "missing"
           STUB_HEADER="$(pwd)/include/linux/oppo_phoenix.h"
           MAKE_OPTS="O=out HOSTCC=gcc HOSTCXX=g++ HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon CC=aarch64-linux-android-gcc"
           EXTRA_FLAGS="-Wno-error -fcommon -w -I$(pwd)/include -I$(pwd)/include/oppo -include ${STUB_HEADER}"
