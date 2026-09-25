@@ -21,8 +21,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev libncurses-dev zip libgnutls28-dev python2 python2-minimal
-
-          # Force 'python' to run as Python 2 for MediaTek DCT compatibility
           sudo ln -sf /usr/bin/python2 /usr/bin/python
 
       - name: Download Toolchains
@@ -33,42 +31,28 @@ jobs:
       - name: Auto-Patch Oppo Phoenix & Create Missing Stubs
         run: |
           echo "Cleaning Oppo Phoenix calls & creating stub headers..."
-          
-          # Clean all phx_ calls from panic.c and main.c
+          sed -i 's/obj-y += oppo_fp_drivers\///g' drivers/input/Makefile || true
+          sed -i 's/obj-$(CONFIG_OPPO_FINGERPRINT) += oppo_fp_drivers\///g' drivers/input/Makefile || true
+          sed -i 's/obj-y += oppo_fp_drivers\///g' drivers/trust/Makefile || true
           sed -i '/phx_set_boot_/d' kernel/panic.c init/main.c || true
-
-          # Create directories for stub headers
           mkdir -p include/linux include/soc/oppo include/soc/qcom vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
-
-          # 1. Qualcomm scm.h Stub (Fixes missing scm.h error)
           cat << 'EOF' > include/soc/qcom/scm.h
           #ifndef _SOC_QCOM_SCM_H
           #define _SOC_QCOM_SCM_H
-          /* Stub header for Qualcomm SCM */
           static inline int qcom_scm_is_available(void) { return 0; }
           #endif
           EOF
-
-          # 2. Qualcomm fsee.h Stub
           cat << 'EOF' > include/soc/qcom/fsee.h
           #ifndef _SOC_QCOM_FSEE_H
           #define _SOC_QCOM_FSEE_H
-          /* Stub header for Oppo Fingerprint Driver */
           #endif
           EOF
-
-          # 3. Disable oppo_fp_drivers Makefiles dynamically
-          find . -type d -name "oppo_fp_drivers" -exec sh -c 'echo "# Disabled" > "$1/Makefile"' _ {} \;
-
-          # 4. Create oppo_phoenix.h stub
           cat << 'EOF' > include/linux/oppo_phoenix.h
           #ifndef _OPPO_PHOENIX_H
           #define _OPPO_PHOENIX_H
-
           #define phx_set_boot_stage(...) do {} while (0)
           #define phx_set_boot_error(...) do {} while (0)
           #define phx_set_boot_info(...) do {} while (0)
-
           #define KERNEL_MM_INIT_DONE 0
           #define KERNEL_LOCAL_IRQ_ENABLE 1
           #define KERNEL_DELAYACCT_INIT_DONE 2
@@ -76,17 +60,14 @@ jobs:
           #define KERNEL_DO_INITCALLS_DONE 4
           #define KERNEL_INIT_DONE 5
           #define KERNEL_DO_BASIC_SETUP_DONE 6
-
           #define ERROR_KERNEL_PANIC 0
           #define ERROR_INT 0
           #define ERROR_AEE 0
           #define ERROR_KE 0
           #define ERROR_NE 0
           #define ERROR_JE 0
-
           #endif
           EOF
-
           cp include/linux/oppo_phoenix.h include/soc/oppo/oppo_phoenix.h 2>/dev/null || true
           cp include/linux/oppo_phoenix.h vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h 2>/dev/null || true
 
@@ -98,8 +79,6 @@ jobs:
           export SUBARCH=arm64
           export CROSS_COMPILE=aarch64-linux-android-
           export CROSS_COMPILE_ARM32=arm-linux-androideabi-
-
-          # Defconfig Auto-Finder
           if [ -f arch/arm64/configs/oppo6771_defconfig ]; then
             DEFCONFIG="oppo6771_defconfig"
           elif [ -f arch/arm64/configs/RMX1827_defconfig ]; then
@@ -108,12 +87,8 @@ jobs:
             DEFCONFIG=$(basename $(find arch/arm64/configs/ -name "*defconfig" | head -n 1))
           fi
           echo "Selected Defconfig: $DEFCONFIG"
-
           make O=out $DEFCONFIG
-
-          # Force include stub header & compile kernel
           STUB_HEADER="$(pwd)/include/linux/oppo_phoenix.h"
-
           make -j$(nproc --all) O=out \
             HOSTCC=gcc \
             HOSTCXX=g++ \
@@ -127,7 +102,6 @@ jobs:
         run: |
           mkdir -p release
           find out/arch/arm64/boot/ -maxdepth 2 -type f \( -name "Image*" -o -name "*.dtb" \) -exec cp {} release/ \;
-          
           if [ ! -f release/Image.gz-dtb ] && [ -f release/Image.gz ]; then
             DTB_FILE=$(find out/arch/arm64/boot/dts/ -name "*.dtb" | head -n 1)
             if [ -n "$DTB_FILE" ]; then
@@ -135,7 +109,6 @@ jobs:
               cat release/Image.gz "$DTB_FILE" > release/Image.gz-dtb
             fi
           fi
-
           echo "Final Artifacts:"
           ls -la release/
 
