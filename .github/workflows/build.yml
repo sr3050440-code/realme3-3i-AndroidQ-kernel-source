@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Auto-Healing)
+name: Build Realme 3i Custom Kernel (Permanent Fix)
 
 on:
   workflow_dispatch:
@@ -28,12 +28,17 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
-      - name: Auto-Create Comprehensive Universal Stubs & Deep Fix Layering Rules
+      - name: Permanent Purge of Problematic Layering & Fingerprint Drivers
         run: |
-          echo "Cleaning up incompatible fingerprint drivers..."
+          echo "Permanently removing problematic fingerprint drivers..."
           rm -rf drivers/input/oppo_fp_drivers || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
+
+          echo "Permanently purging conflicting layering_rule_base folders..."
+          rm -rf drivers/misc/mediatek/video/common/layering_rule_base || true
+          # Make sure Makefiles don't look for it
+          find drivers/misc/mediatek/video/ -name "Makefile" -o -name "Kconfig" | xargs sed -i '/layering_rule_base/d' || true
 
           echo "Creating universal stub directories and headers..."
           mkdir -p include/oppo include/soc/qcom include/linux include/soc/oppo vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
@@ -128,26 +133,6 @@ jobs:
                   f.write(content)
           except Exception:
               pass
-          " || true
-
-          # Deep Auto-heal all layering_rule files across the kernel source
-          python3 -c "
-          import os
-          for root, dirs, files in os.walk('drivers/misc/mediatek/video'):
-              for file in files:
-                  if 'layering_rule' in file and file.endswith('.c'):
-                      fullpath = os.path.join(root, file)
-                      print(f'Patching {fullpath}...')
-                      try:
-                          with open(fullpath, 'r') as f:
-                              content = f.read()
-                          content = content.replace('mmpfile_log_ex(dds_mmp_get_events()->rt,', 'mmpfile_log_ex(0,')
-                          content = content.replace('mmpfile_log_ex(dds_mmp_get_events()->', 'mmpfile_log_ex(0,')
-                          content = content.replace('mmpfile_log_ex(dds_mmp_get_events()', 'mmpfile_log_ex(0')
-                          with open(fullpath, 'w') as f:
-                              f.write(content)
-                      except Exception as e:
-                          print(f'Error patching {fullpath}: {e}')
           " || true
 
       - name: Auto-Heal Defconfig & Compile Kernel
