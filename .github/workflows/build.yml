@@ -42,7 +42,10 @@ jobs:
           sed -i '/videox/d' drivers/misc/mediatek/video/mt6771/Makefile || true
           sed -i '/videox/d' drivers/misc/mediatek/video/Makefile || true
 
-          mkdir -p include/soc/qcom drivers/misc/mediatek/smi
+          # Disable faulty oppo charger driver
+          sed -i 's/.*oppo_mt6771_charger.o.*/ /g' drivers/power/supply/mediatek/charger/Makefile || true
+
+          mkdir -p include/soc/qcom drivers/misc/mediatek/smi drivers/misc/mediatek/ext_disp/mt6771
           cat << 'EOF' > include/soc/qcom/scm.h
           #ifndef _SOC_QCOM_SCM_H
           #define _SOC_QCOM_SCM_H
@@ -55,13 +58,20 @@ jobs:
           #endif
           EOF
 
-          # Create disp_assert_layer.h missing stub
+          # Create missing stubs for display headers
           cat << 'EOF' > include/disp_assert_layer.h
           #ifndef __DISP_ASSERT_LAYER_H__
           #define __DISP_ASSERT_LAYER_H__
           #endif
           EOF
           cp include/disp_assert_layer.h drivers/misc/mediatek/smi/disp_assert_layer.h || true
+
+          cat << 'EOF' > include/disp_drv_log.h
+          #ifndef __DISP_DRV_LOG_H__
+          #define __DISP_DRV_LOG_H__
+          #endif
+          EOF
+          cp include/disp_drv_log.h drivers/misc/mediatek/ext_disp/mt6771/disp_drv_log.h || true
 
           sed -i '/phx_set_boot_/d' kernel/panic.c init/main.c || true
           mkdir -p include/linux include/soc/oppo vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
