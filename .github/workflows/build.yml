@@ -28,23 +28,46 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
           
-          # Fix: Remove conflicting legacy Clang linkers
+          # Remove conflicting legacy Clang linkers
           rm -f clang/bin/ld clang/bin/ld.lld
 
-      - name: Auto-Heal MediaTek Python Scripts & Compile Kernel
+      - name: Setup Python 2/3 Compatibility Layer & Fix Scripts
+        run: |
+          set -o pipefail
+
+          # 1. Inject Python 2 backward compatibility into Python 3 environment
+          PYTHON_SITE=$(python3 -c "import site; print(site.getsitepackages()[0])")
+          sudo bash -c "cat << 'EOF' > $PYTHON_SITE/sitecustomize.py
+          import string
+          import builtins
+
+          string.atoi = lambda s, *args: int(s, *args) if args else int(s)
+          string.atol = lambda s, *args: int(s, *args) if args else int(s)
+          string.atof = lambda s: float(s)
+          string.strip = lambda s, *args: s.strip(*args)
+          string.split = lambda s, *args: s.split(*args)
+          string.replace = lambda s, *args: s.replace(*args)
+          string.lower = lambda s: s.lower()
+          string.upper = lambda s: s.upper()
+
+          def cmp(a, b):
+              return (a > b) - (a < b)
+
+          builtins.cmp = cmp
+          EOF"
+
+          # 2. Fix old Python 2 print/syntax statements
+          find tools/ -name "*.py" -exec 2to3 -w -n {} + 2>/dev/null || true
+          chmod -R +x tools/
+
+      - name: Auto-Heal Defconfig & Compile Kernel
         run: |
           set -o pipefail
           export PATH="$(pwd)/clang/bin:$(pwd)/gcc64/bin:$(pwd)/gcc32/bin:$PATH"
           export ARCH=arm64
           export SUBARCH=arm64
 
-          # Fix Shebang on Line 1 and Insert 'cmp' at Line 2 safely
-          find tools/ -name "*.py" -exec sed -i '1s|^.*$|#!/usr/bin/env python3|' {} + 2>/dev/null || true
-          find tools/ -name "*.py" -exec sed -i '2i def cmp(a, b):\n    return (a > b) - (a < b)' {} + 2>/dev/null || true
-          find tools/ -name "*.py" -exec 2to3 -w -n {} + 2>/dev/null || true
-          chmod -R +x tools/
-
-          # 1. Defconfig Auto-Finder
+          # Defconfig Auto-Finder
           if [ -f arch/arm64/configs/oppo6771_defconfig ]; then
             DEFCONFIG="oppo6771_defconfig"
           elif [ -f arch/arm64/configs/RMX1827_defconfig ]; then
@@ -56,7 +79,7 @@ jobs:
 
           make O=out $DEFCONFIG
 
-          # 2. Compile Kernel
+          # Compile Kernel
           make -j$(nproc --all) O=out \
             HOSTCC=gcc \
             HOSTCXX=g++ \
