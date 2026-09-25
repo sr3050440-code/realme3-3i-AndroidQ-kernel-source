@@ -30,6 +30,9 @@ jobs:
 
           make O=out oppo6771_defconfig
           make -j$(nproc --all) O=out \
+            HOSTCC=gcc \
+            HOSTCXX=g++ \
+            HOSTLD=/usr/bin/ld \
             CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-android- \
