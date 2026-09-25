@@ -30,16 +30,17 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
-      - name: Auto-Patch Oppo Phoenix in Source & Create Complete Stub
+      - name: Auto-Patch Oppo Phoenix & Create Missing Stubs
         run: |
-          echo "Cleaning Oppo Phoenix calls from panic.c and main.c..."
+          echo "Cleaning Oppo Phoenix calls & creating stub headers..."
           
           # Clean all phx_ calls from panic.c and main.c
           sed -i '/phx_set_boot_/d' kernel/panic.c init/main.c || true
 
-          # Create full stub headers with all missing defines
-          mkdir -p include/linux include/soc/oppo vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
+          # Create directories for stub headers
+          mkdir -p include/linux include/soc/oppo include/soc/qcom vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
 
+          # Create oppo_phoenix.h stub
           cat << 'EOF' > include/linux/oppo_phoenix.h
           #ifndef _OPPO_PHOENIX_H
           #define _OPPO_PHOENIX_H
@@ -63,6 +64,14 @@ jobs:
           #define ERROR_NE 0
           #define ERROR_JE 0
 
+          #endif
+          EOF
+
+          # Create missing Qualcomm fsee.h stub for Oppo fingerprint driver
+          cat << 'EOF' > include/soc/qcom/fsee.h
+          #ifndef _SOC_QCOM_FSEE_H
+          #define _SOC_QCOM_FSEE_H
+          /* Stub header for Oppo Fingerprint Driver */
           #endif
           EOF
 
