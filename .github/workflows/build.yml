@@ -80,7 +80,7 @@ jobs:
           #endif
           EOF
 
-          # Oppo Phoenix Stub
+          # Oppo Phoenix Stub with Android Log Macros
           cat << 'EOF' > include/linux/oppo_phoenix.h
           #ifndef _OPPO_PHOENIX_H
           #define _OPPO_PHOENIX_H
@@ -100,6 +100,17 @@ jobs:
           #define ERROR_KE 0
           #define ERROR_NE 0
           #define ERROR_JE 0
+          #ifndef ANDROID_LOG_INFO
+          #define ANDROID_LOG_UNKNOWN 0
+          #define ANDROID_LOG_DEFAULT 1
+          #define ANDROID_LOG_VERBOSE 2
+          #define ANDROID_LOG_DEBUG 3
+          #define ANDROID_LOG_INFO 4
+          #define ANDROID_LOG_WARN 5
+          #define ANDROID_LOG_ERROR 6
+          #define ANDROID_LOG_FATAL 7
+          #define ANDROID_LOG_SILENT 8
+          #endif
           #endif
           EOF
           cp include/linux/oppo_phoenix.h include/soc/oppo/oppo_phoenix.h 2>/dev/null || true
@@ -136,7 +147,7 @@ jobs:
           
           STUB_HEADER="$(pwd)/include/linux/oppo_phoenix.h"
           MAKE_OPTS="O=out HOSTCC=gcc HOSTCXX=g++ HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon CC=aarch64-linux-android-gcc"
-          EXTRA_FLAGS="-Wno-error -fcommon -w -I$(pwd)/include -I$(pwd)/include/oppo -include ${STUB_HEADER}"
+          EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -I$(pwd)/include -I$(pwd)/include/oppo -include ${STUB_HEADER}"
           
           make -j$(nproc --all) $MAKE_OPTS KCFLAGS="$EXTRA_FLAGS" 2>&1 | tee build.log
 
