@@ -30,6 +30,17 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
+      - name: Auto-Heal Missing Oppo Vendor Headers
+        run: |
+          # Create dummy/stub header for missing OEM Oppo vendor files
+          mkdir -p vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
+          cat << 'EOF' > vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h
+          #ifndef _OPPO_PHOENIX_H
+          #define _OPPO_PHOENIX_H
+          // Stub header generated for kernel build
+          #endif
+          EOF
+
       - name: Auto-Heal Defconfig & Compile Kernel
         run: |
           set -o pipefail
