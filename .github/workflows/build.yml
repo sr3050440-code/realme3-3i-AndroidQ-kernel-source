@@ -5,11 +5,11 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Kernel Source
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Build Dependencies
         run: |
@@ -36,11 +36,10 @@ jobs:
             CROSS_COMPILE_ARM32=arm-linux-androideabi-
 
       - name: Upload Kernel Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Realme3i-Kernel-Image
           path: |
             out/arch/arm64/boot/Image.gz-dtb
             out/arch/arm64/boot/Image.gz
             out/arch/arm64/boot/Image
-            
