@@ -30,12 +30,11 @@ jobs:
 
       - name: Auto-Patch Oppo Phoenix & Create Missing Stubs
         run: |
-          echo "Cleaning Oppo Phoenix calls & creating stub headers..."
-          sed -i 's/obj-y += oppo_fp_drivers\///g' drivers/input/Makefile || true
-          sed -i 's/obj-$(CONFIG_OPPO_FINGERPRINT) += oppo_fp_drivers\///g' drivers/input/Makefile || true
-          sed -i 's/obj-y += oppo_fp_drivers\///g' drivers/trust/Makefile || true
-          sed -i '/phx_set_boot_/d' kernel/panic.c init/main.c || true
-          mkdir -p include/linux include/soc/oppo include/soc/qcom vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
+          echo "Completely removing oppo_fp_drivers to prevent compilation errors..."
+          rm -rf drivers/input/oppo_fp_drivers || true
+          rm -rf drivers/trust/oppo_fp_drivers || true
+
+          mkdir -p include/soc/qcom
           cat << 'EOF' > include/soc/qcom/scm.h
           #ifndef _SOC_QCOM_SCM_H
           #define _SOC_QCOM_SCM_H
@@ -47,6 +46,9 @@ jobs:
           #define _SOC_QCOM_FSEE_H
           #endif
           EOF
+
+          sed -i '/phx_set_boot_/d' kernel/panic.c init/main.c || true
+          mkdir -p include/linux include/soc/oppo vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
           cat << 'EOF' > include/linux/oppo_phoenix.h
           #ifndef _OPPO_PHOENIX_H
           #define _OPPO_PHOENIX_H
