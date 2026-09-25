@@ -38,7 +38,8 @@ jobs:
           export ARCH=arm64
           export SUBARCH=arm64
 
-          # Auto-Fix MediaTek Python 2 DCT scripts to Python 3
+          # Auto-Fix Python 3 missing 'cmp' function & Python 2 syntax
+          find tools/ -name "*.py" -exec sed -i '1s/^/def cmp(a, b):\n    return (a > b) - (a < b)\n/' {} + 2>/dev/null || true
           find tools/ -name "*.py" -exec 2to3 -w -n {} + 2>/dev/null || true
 
           # 1. Defconfig Auto-Finder
