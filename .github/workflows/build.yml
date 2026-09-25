@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Smart Stub Linker Fix)
+name: Build Realme 3i Custom Kernel (Nuke Old C Files & Stub Fix)
 
 on:
   workflow_dispatch:
@@ -28,14 +28,18 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
-      - name: Inject Smart Stubs for Video & Fingerprint Drivers
+      - name: Nuke Buggy C Files and Inject Clean Stubs
         run: |
           echo "Removing problematic fingerprint drivers..."
           rm -rf drivers/input/oppo_fp_drivers || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
 
-          echo "Creating smart C stubs to satisfy linker references..."
+          echo "Nuking old video subfolders and replacing with pure stubs..."
+          rm -rf drivers/misc/mediatek/video/common/layering_rule_base
+          rm -rf drivers/misc/mediatek/video/mt6771/video
+          rm -rf drivers/misc/mediatek/video/common/color20
+
           mkdir -p drivers/misc/mediatek/video/common/layering_rule_base
           mkdir -p drivers/misc/mediatek/video/mt6771/video
           mkdir -p drivers/misc/mediatek/video/common/color20
@@ -49,7 +53,7 @@ jobs:
           EOF
 
           cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/Makefile
-          obj-y += layering_stub.o
+          obj-y := layering_stub.o
           EOF
 
           # MT6771 Video Stub
@@ -61,7 +65,7 @@ jobs:
           EOF
 
           cat << 'EOF' > drivers/misc/mediatek/video/mt6771/video/Makefile
-          obj-y += video_stub.o
+          obj-y := video_stub.o
           EOF
 
           # Color20 Stub
@@ -73,7 +77,7 @@ jobs:
           EOF
 
           cat << 'EOF' > drivers/misc/mediatek/video/common/color20/Makefile
-          obj-y += color_stub.o
+          obj-y := color_stub.o
           EOF
 
           echo "Creating universal stub headers..."
