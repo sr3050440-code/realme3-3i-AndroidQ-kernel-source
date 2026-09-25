@@ -28,7 +28,7 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
-      - name: Auto-Create Comprehensive Universal Stubs & Fix Layering Rule
+      - name: Auto-Create Comprehensive Universal Stubs & Deep Fix Layering Rules
         run: |
           echo "Cleaning up incompatible fingerprint drivers..."
           rm -rf drivers/input/oppo_fp_drivers || true
@@ -119,26 +119,35 @@ jobs:
           # Clean up problematic panic calls in kernel/panic.c
           python3 -c "
           path = 'kernel/panic.c'
-          with open(path, 'r') as f:
-              content = f.read()
-          content = content.replace('phx_set_boot_error(ERROR_INT);', '// phx_set_boot_error(ERROR_INT);')
-          content = content.replace('phx_set_boot_error', '// phx_set_boot_error')
-          with open(path, 'w') as f:
-              f.write(content)
-          " || true
-
-          # Auto-heal layering_rule.c mmpfile macros to prevent type mismatch errors
-          python3 -c "
-          path = 'drivers/misc/mediatek/video/mt6771/videox/layering_rule.c'
           try:
               with open(path, 'r') as f:
                   content = f.read()
-              content = content.replace('mmpfile_log_ex(dds_mmp_get_events()->rt,', 'mmpfile_log_ex(0,')
-              content = content.replace('mmpfile_log_ex(dds_mmp_get_events()', 'mmpfile_log_ex(0')
+              content = content.replace('phx_set_boot_error(ERROR_INT);', '// phx_set_boot_error(ERROR_INT);')
+              content = content.replace('phx_set_boot_error', '// phx_set_boot_error')
               with open(path, 'w') as f:
                   f.write(content)
-          except Exception as e:
-              print('Note: layering_rule.c patch skipped or handled:', e)
+          except Exception:
+              pass
+          " || true
+
+          # Deep Auto-heal all layering_rule files across the kernel source
+          python3 -c "
+          import os
+          for root, dirs, files in os.walk('drivers/misc/mediatek/video'):
+              for file in files:
+                  if 'layering_rule' in file and file.endswith('.c'):
+                      fullpath = os.path.join(root, file)
+                      print(f'Patching {fullpath}...')
+                      try:
+                          with open(fullpath, 'r') as f:
+                              content = f.read()
+                          content = content.replace('mmpfile_log_ex(dds_mmp_get_events()->rt,', 'mmpfile_log_ex(0,')
+                          content = content.replace('mmpfile_log_ex(dds_mmp_get_events()->', 'mmpfile_log_ex(0,')
+                          content = content.replace('mmpfile_log_ex(dds_mmp_get_events()', 'mmpfile_log_ex(0')
+                          with open(fullpath, 'w') as f:
+                              f.write(content)
+                      except Exception as e:
+                          print(f'Error patching {fullpath}: {e}')
           " || true
 
       - name: Auto-Heal Defconfig & Compile Kernel
