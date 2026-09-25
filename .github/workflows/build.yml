@@ -30,11 +30,10 @@ jobs:
 
       - name: Auto-Heal Defconfig & Compile Kernel
         run: |
-          export PATH="$(pwd)/clang/bin:$(pwd)/gcc64/bin:$(pwd)/gcc32/bin:$PATH"
           export ARCH=arm64
           export SUBARCH=arm64
 
-          # 1. Defconfig Auto-Finder & Fallback Healing
+          # 1. Defconfig Auto-Finder
           if [ -f arch/arm64/configs/oppo6771_defconfig ]; then
             DEFCONFIG="oppo6771_defconfig"
           elif [ -f arch/arm64/configs/RMX1827_defconfig ]; then
@@ -46,7 +45,13 @@ jobs:
 
           make O=out $DEFCONFIG
 
-          # 2. Main Build Attempt with Warnings-as-Errors Disabled
+          # 2. Build Host Scripts using System GCC FIRST (Prevents fixdep relr.dyn error)
+          make O=out -j$(nproc --all) scripts HOSTCC=gcc HOSTCXX=g++ HOSTLD=/usr/bin/ld
+
+          # 3. Now Export Toolchains to PATH for Kernel Cross-Compilation
+          export PATH="$(pwd)/clang/bin:$(pwd)/gcc64/bin:$(pwd)/gcc32/bin:$PATH"
+
+          # 4. Compile Main Kernel
           make -j$(nproc --all) O=out \
             HOSTCC=gcc \
             HOSTCXX=g++ \
@@ -56,27 +61,16 @@ jobs:
             CROSS_COMPILE=aarch64-linux-android- \
             CROSS_COMPILE_ARM32=arm-linux-androideabi- \
             KCFLAGS="-Wno-error" \
-            2>&1 | tee build.log || {
-              echo "First build failed. Initiating Auto-Healing Fallback Build..."
-              make O=out $DEFCONFIG
-              make -j$(nproc --all) O=out \
-                HOSTCC=gcc \
-                HOSTLD=/usr/bin/ld \
-                CC=clang \
-                CROSS_COMPILE=aarch64-linux-android- \
-                KCFLAGS="-Wno-error" 2>&1 | tee -a build.log
-            }
+            2>&1 | tee build.log
 
       - name: Auto-Heal DTB & Collect Artifacts
         run: |
           mkdir -p release
-          # Collect all generated kernel images
           find out/arch/arm64/boot/ -maxdepth 2 -type f \( -name "Image*" -o -name "*.dtb" \) -exec cp {} release/ \;
           
-          # Auto-Healing: Append DTB to Image.gz if Image.gz-dtb was not produced automatically
           if [ ! -f release/Image.gz-dtb ] && [ -f release/Image.gz ]; then
             DTB_FILE=$(find out/arch/arm64/boot/dts/ -name "*.dtb" | head -n 1)
-            if [ -n "$DTB_FILE" ]; me
+            if [ -n "$DTB_FILE" ]; then
               echo "Auto-Healing: Stitching Image.gz with DTB..."
               cat release/Image.gz "$DTB_FILE" > release/Image.gz-dtb
             fi
