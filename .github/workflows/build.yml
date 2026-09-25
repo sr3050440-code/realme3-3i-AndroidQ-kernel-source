@@ -58,7 +58,7 @@ jobs:
           #endif
           EOF
 
-          # Create missing stubs for display headers
+          # Create missing stubs for display and power headers
           cat << 'EOF' > include/disp_assert_layer.h
           #ifndef __DISP_ASSERT_LAYER_H__
           #define __DISP_ASSERT_LAYER_H__
@@ -73,14 +73,23 @@ jobs:
           EOF
           cp include/disp_drv_log.h drivers/misc/mediatek/ext_disp/mt6771/disp_drv_log.h || true
 
+          cat << 'EOF' > include/disp_power.h
+          #ifndef __DISP_POWER_H__
+          #define __DISP_POWER_H__
+          #endif
+          EOF
+          cp include/disp_power.h drivers/misc/mediatek/ext_disp/mt6771/disp_power.h || true
+
           sed -i '/phx_set_boot_/d' kernel/panic.c init/main.c || true
           mkdir -p include/linux include/soc/oppo vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
+          
+          # Fixed oppo_phoenix.h using proper static inline functions instead of macros
           cat << 'EOF' > include/linux/oppo_phoenix.h
           #ifndef _OPPO_PHOENIX_H
           #define _OPPO_PHOENIX_H
-          #define phx_set_boot_stage(...) do {} while (0)
-          #define phx_set_boot_error(...) do {} while (0)
-          #define phx_set_boot_info(...) do {} while (0)
+          static inline void phx_set_boot_stage(const char *stage) { (void)stage; }
+          static inline void phx_set_boot_error(const char *error) { (void)error; }
+          static inline void phx_set_boot_info(const char *info) { (void)info; }
           #define KERNEL_MM_INIT_DONE 0
           #define KERNEL_LOCAL_IRQ_ENABLE 1
           #define KERNEL_DELAYACCT_INIT_DONE 2
