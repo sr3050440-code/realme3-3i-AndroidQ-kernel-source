@@ -44,6 +44,7 @@ jobs:
           sed -i '/videox/d' drivers/misc/mediatek/video/Makefile || true
           sed -i '/oppo/d' drivers/power/supply/Makefile || true
           sed -i '/oppo/d' drivers/power/supply/mediatek/Makefile || true
+          sed -i '/oppo\/Kconfig/d' drivers/power/supply/Kconfig || true
 
           mkdir -p include/soc/qcom drivers/misc/mediatek/smi drivers/misc/mediatek/ext_disp/mt6771
           cat << 'EOF' > include/soc/qcom/scm.h
