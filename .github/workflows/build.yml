@@ -41,8 +41,9 @@ jobs:
 
           mkdir -p drivers/misc/mediatek/video/common/layering_rule_base
           mkdir -p drivers/misc/mediatek/video/common/color20
+          mkdir -p drivers/misc/mediatek/video/mt6771/videos
 
-          # Layering Rule Base Stub
+          # Layering Rule Base Stub C file
           cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/layering_stub.c
           #include <linux/module.h>
           #include <linux/kernel.h>
@@ -52,6 +53,14 @@ jobs:
 
           cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/Makefile
           obj-y := layering_stub.o
+          EOF
+
+          # Place layering_rule_base.h precisely where mt6771/videos/layering_rule.h expects it
+          cat << 'EOF' > drivers/misc/mediatek/video/mt6771/videos/layering_rule_base.h
+          #ifndef __LAYERING_RULE_BASE_H__
+          #define __LAYERING_RULE_BASE_H__
+          int layering_rule_calculation(void);
+          #endif
           EOF
 
           # Color20 Stub
@@ -145,33 +154,17 @@ jobs:
           cp include/linux/oppo_phoenix.h include/soc/oppo/oppo_phoenix.h 2>/dev/null || true
           cp include/linux/oppo_phoenix.h vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h 2>/dev/null || true
 
-          # Python patch to fix panic.c and completely bypass missing layering_rule_base.h in debug.c
           python3 -c "
-          import glob
-          
-          # Patch panic.c
+          path = 'kernel/panic.c'
           try:
-              with open('kernel/panic.c', 'r') as f:
+              with open(path, 'r') as f:
                   content = f.read()
               content = content.replace('phx_set_boot_error(ERROR_INT);', '// phx_set_boot_error(ERROR_INT);')
               content = content.replace('phx_set_boot_error', '// phx_set_boot_error')
-              with open('kernel/panic.c', 'w') as f:
+              with open(path, 'w') as f:
                   f.write(content)
           except Exception:
               pass
-
-          # Patch debug.c to comment out the missing header include
-          for path in glob.glob('**/debug.c', recursive=True):
-              if 'mediatek/video' in path:
-                  try:
-                      with open(path, 'r') as f:
-                          content = f.read()
-                      content = content.replace('#include \"layering_rule_base.h\"', '// #include \"layering_rule_base.h\"')
-                      content = content.replace('#include <layering_rule_base.h>', '// #include <layering_rule_base.h>')
-                      with open(path, 'w') as f:
-                          f.write(content)
-                  except Exception:
-                      pass
           " || true
 
       - name: Compile Kernel
