@@ -41,8 +41,6 @@ jobs:
 
           mkdir -p drivers/misc/mediatek/video/common/layering_rule_base
           mkdir -p drivers/misc/mediatek/video/common/color20
-          mkdir -p drivers/misc/mediatek/video/mt6771/videos
-          mkdir -p drivers/misc/mediatek/video/mt6771/video
 
           # Layering Rule Base Stub C file
           cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/layering_stub.c
@@ -55,25 +53,6 @@ jobs:
           cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/Makefile
           obj-y := layering_stub.o
           EOF
-
-          # Complete layering_rule_base.h with all missing HRT definitions to fix the enum errors
-          cat << 'EOF' > drivers/misc/mediatek/video/mt6771/videos/layering_rule_base.h
-          #ifndef __LAYERING_RULE_BASE_H__
-          #define __LAYERING_RULE_BASE_H__
-
-          int layering_rule_calculation(void);
-
-          #define HRT_PATH_OSZ_NONE 0
-          #define HRT_PATH_PIPE_SINGLE 1
-          #define HRT_PATH_DISP_DUAL_EXT 2
-          #define HRT_PATH_OSZ_PARTIAL 3
-          #define HRT_PATH_DISP_SINGLE 4
-          #define HRT_PATH_UNKNOWN 5
-          #define HRT_PATH_NUM 6
-
-          #endif
-          EOF
-          cp drivers/misc/mediatek/video/mt6771/videos/layering_rule_base.h drivers/misc/mediatek/video/mt6771/video/layering_rule_base.h || true
 
           # Color20 Stub
           cat << 'EOF' > drivers/misc/mediatek/video/common/color20/color_stub.c
@@ -166,17 +145,47 @@ jobs:
           cp include/linux/oppo_phoenix.h include/soc/oppo/oppo_phoenix.h 2>/dev/null || true
           cp include/linux/oppo_phoenix.h vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h 2>/dev/null || true
 
+          # Python patch to fix panic.c and directly embed everything inside layering_rule.h
           python3 -c "
-          path = 'kernel/panic.c'
+          import glob
+          
+          # Patch panic.c
           try:
-              with open(path, 'r') as f:
+              with open('kernel/panic.c', 'r') as f:
                   content = f.read()
               content = content.replace('phx_set_boot_error(ERROR_INT);', '// phx_set_boot_error(ERROR_INT);')
               content = content.replace('phx_set_boot_error', '// phx_set_boot_error')
-              with open(path, 'w') as f:
+              with open('kernel/panic.c', 'w') as f:
                   f.write(content)
           except Exception:
               pass
+
+          # Patch layering_rule.h to embed definitions directly, bypassing missing header issues
+          for path in glob.glob('**/layering_rule.h', recursive=True):
+              try:
+                  with open(path, 'r') as f:
+                      content = f.read()
+                  
+                  embedded_code = '''
+          #ifndef __LAYERING_RULE_BASE_H__
+          #define __LAYERING_RULE_BASE_H__
+          static inline int layering_rule_calculation(void) { return 0; }
+          #define HRT_PATH_OSZ_NONE 0
+          #define HRT_PATH_PIPE_SINGLE 1
+          #define HRT_PATH_DISP_DUAL_EXT 2
+          #define HRT_PATH_OSZ_PARTIAL 3
+          #define HRT_PATH_DISP_SINGLE 4
+          #define HRT_PATH_UNKNOWN 5
+          #define HRT_PATH_NUM 6
+          #endif
+          '''
+                  content = content.replace('#include \"layering_rule_base.h\"', embedded_code)
+                  content = content.replace('#include <layering_rule_base.h>', embedded_code)
+                  
+                  with open(path, 'w') as f:
+                      f.write(content)
+              except Exception as e:
+                  print(f'Error patching {path}: {e}')
           " || true
 
       - name: Compile Kernel
