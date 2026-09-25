@@ -39,8 +39,9 @@ jobs:
           sed -i '/oppo_fp_drivers/d' drivers/trust/Kconfig || true
           sed -i '/oppo_fp_drivers/d' drivers/trust/Makefile || true
 
-          # Skip failing display private API calls
-          find drivers/misc/mediatek/video/ -type f -name "Makefile" -exec sed -i 's/.*oppo_display_private_api.*//g' {} + || true
+          # Neutralize broken videox Makefile with a clean dummy one
+          mkdir -p drivers/misc/mediatek/video/mt6771/videox
+          echo "obj-y :=" > drivers/misc/mediatek/video/mt6771/videox/Makefile
 
           mkdir -p include/soc/qcom
           cat << 'EOF' > include/soc/qcom/scm.h
