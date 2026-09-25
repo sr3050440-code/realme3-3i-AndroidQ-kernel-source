@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Permanent Fix)
+name: Build Realme 3i Custom Kernel (Final Fix)
 
 on:
   workflow_dispatch:
@@ -28,17 +28,26 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
-      - name: Permanent Purge of Problematic Layering & Fingerprint Drivers
+      - name: Ultimate Layering Rule & Missing Header Auto-Healer
         run: |
-          echo "Permanently removing problematic fingerprint drivers..."
+          echo "Removing problematic fingerprint drivers..."
           rm -rf drivers/input/oppo_fp_drivers || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
 
-          echo "Permanently purging conflicting layering_rule_base folders..."
-          rm -rf drivers/misc/mediatek/video/common/layering_rule_base || true
-          # Make sure Makefiles don't look for it
-          find drivers/misc/mediatek/video/ -name "Makefile" -o -name "Kconfig" | xargs sed -i '/layering_rule_base/d' || true
+          echo "Creating missing layering_rule_base.h stub to satisfy videox headers..."
+          mkdir -p drivers/misc/mediatek/video/common/layering_rule_base/v1.1
+          
+          # Create an empty or safe stub header where videox expects it
+          cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/layering_rule_base.h
+          #ifndef __LAYERING_RULE_BASE_H__
+          #define __LAYERING_RULE_BASE_H__
+          #define mmpfile_log_ex(args...) do { } while (0)
+          #endif
+          EOF
+          
+          # Also place it inside v1.1 just in case
+          cp drivers/misc/mediatek/video/common/layering_rule_base/layering_rule_base.h drivers/misc/mediatek/video/common/layering_rule_base/v1.1/layering_rule_base.h || true
 
           echo "Creating universal stub directories and headers..."
           mkdir -p include/oppo include/soc/qcom include/linux include/soc/oppo vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
@@ -155,7 +164,7 @@ jobs:
           
           STUB_HEADER="$(pwd)/include/linux/oppo_phoenix.h"
           MAKE_OPTS="O=out HOSTCC=gcc HOSTCXX=g++ HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon CC=aarch64-linux-android-gcc"
-          EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -I$(pwd)/include -I$(pwd)/include/oppo -include ${STUB_HEADER}"
+          EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -I$(pwd)/include -I$(pwd)/include/oppo -I$(pwd)/drivers/misc/mediatek/video/common/layering_rule_base -include ${STUB_HEADER}"
           
           make -j$(nproc --all) $MAKE_OPTS KCFLAGS="$EXTRA_FLAGS" 2>&1 | tee build.log
 
