@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Stub Header Fix)
+name: Build Realme 3i Custom Kernel (Final Video Bypass)
 
 on:
   workflow_dispatch:
@@ -28,41 +28,20 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
-      - name: Create Layering Rule Base Stub Header
+      - name: Purge Broken Video and Fingerprint Drivers
         run: |
           echo "Removing problematic fingerprint drivers..."
           rm -rf drivers/input/oppo_fp_drivers || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
 
-          echo "Creating complete stub for layering_rule_base.h..."
-          mkdir -p drivers/misc/mediatek/video/common/layering_rule_base/v1.1
+          echo "Purging broken video layering and MT6771 video subfolders..."
+          rm -rf drivers/misc/mediatek/video/common/layering_rule_base || true
+          rm -rf drivers/misc/mediatek/video/mt6771/video || true
           
-          cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/layering_rule_base.h
-          #ifndef __LAYERING_RULE_BASE_H__
-          #define __LAYERING_RULE_BASE_H__
-
-          #define HRT_PATH_RSZ_NONE 0
-          #define HRT_PATH_PIPE_SINGLE 1
-          #define HRT_PATH_DISP_DUAL_EXT 2
-          #define HRT_PATH_RSZ_PARTIAL 3
-          #define HRT_PATH_DISP_STABLE 4
-          #define HRT_PATH_UNKNOWN 5
-          #define HRT_PATH_NUM 6
-
-          struct layering_rule_info {
-              int hrt_num;
-              int dal_enable;
-              int adaptive_dc_enabled;
-              int adjust_hrt_level;
-          };
-
-          #define mmpfile_log_ex(args...) do { } while (0)
-
-          #endif
-          EOF
-
-          cp drivers/misc/mediatek/video/common/layering_rule_base/layering_rule_base.h drivers/misc/mediatek/video/common/layering_rule_base/v1.1/layering_rule_base.h || true
+          # Remove references from Makefiles
+          find drivers/misc/mediatek/video/ -name "Makefile" | xargs sed -i '/layering_rule/d' || true
+          find drivers/misc/mediatek/video/ -name "Makefile" | xargs sed -i '/video/d' || true
 
           echo "Creating universal stub directories and headers..."
           mkdir -p include/oppo include/soc/qcom include/linux include/soc/oppo vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
@@ -176,7 +155,7 @@ jobs:
           
           STUB_HEADER="$(pwd)/include/linux/oppo_phoenix.h"
           MAKE_OPTS="O=out HOSTCC=gcc HOSTCXX=g++ HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon CC=aarch64-linux-android-gcc"
-          EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -I$(pwd)/include -I$(pwd)/include/oppo -I$(pwd)/drivers/misc/mediatek/video/common/layering_rule_base -include ${STUB_HEADER}"
+          EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -I$(pwd)/include -I$(pwd)/include/oppo -include ${STUB_HEADER}"
           
           make -j$(nproc --all) $MAKE_OPTS KCFLAGS="$EXTRA_FLAGS" 2>&1 | tee build.log
 
