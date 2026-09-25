@@ -44,18 +44,10 @@ jobs:
           mkdir -p drivers/misc/mediatek/video/mt6771/video
           mkdir -p drivers/misc/mediatek/video/common/color20
 
-          # Layering Rule Base Stub & Header (Added missing header file)
-          cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/layering_rule_base.h
-          #ifndef __LAYERING_RULE_BASE_H__
-          #define __LAYERING_RULE_BASE_H__
-          int layering_rule_calculation(void);
-          #endif
-          EOF
-
+          # Layering Rule Base Stub
           cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/layering_stub.c
           #include <linux/module.h>
           #include <linux/kernel.h>
-          #include "layering_rule_base.h"
           int layering_rule_calculation(void) { return 0; }
           EXPORT_SYMBOL(layering_rule_calculation);
           EOF
@@ -64,7 +56,14 @@ jobs:
           obj-y := layering_stub.o
           EOF
 
-          # MT6771 Video Stub
+          # MT6771 Video Stub & Header (Placed right where debug.c needs it)
+          cat << 'EOF' > drivers/misc/mediatek/video/mt6771/video/layering_rule_base.h
+          #ifndef __LAYERING_RULE_BASE_H__
+          #define __LAYERING_RULE_BASE_H__
+          int layering_rule_calculation(void);
+          #endif
+          EOF
+
           cat << 'EOF' > drivers/misc/mediatek/video/mt6771/video/video_stub.c
           #include <linux/module.h>
           #include <linux/kernel.h>
