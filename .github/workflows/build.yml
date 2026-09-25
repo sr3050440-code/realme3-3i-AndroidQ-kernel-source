@@ -30,18 +30,17 @@ jobs:
 
       - name: Auto-Patch Oppo Phoenix & Create Missing Stubs
         run: |
-          echo "Completely removing oppo_fp_drivers and cleaning references..."
+          echo "Completely removing problematic folders and cleaning references..."
           rm -rf drivers/input/oppo_fp_drivers || true
           rm -rf drivers/trust/oppo_fp_drivers || true
+          rm -rf drivers/misc/mediatek/video/mt6771/videox || true
           
           sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
           sed -i '/oppo_fp_drivers/d' drivers/trust/Kconfig || true
           sed -i '/oppo_fp_drivers/d' drivers/trust/Makefile || true
-
-          # Neutralize broken videox Makefile with a clean dummy one
-          mkdir -p drivers/misc/mediatek/video/mt6771/videox
-          echo "obj-y :=" > drivers/misc/mediatek/video/mt6771/videox/Makefile
+          sed -i '/videox/d' drivers/misc/mediatek/video/mt6771/Makefile || true
+          sed -i '/videox/d' drivers/misc/mediatek/video/Makefile || true
 
           mkdir -p include/soc/qcom
           cat << 'EOF' > include/soc/qcom/scm.h
