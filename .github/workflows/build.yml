@@ -28,9 +28,14 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
-      - name: Auto-Create Comprehensive Universal Stubs
+      - name: Auto-Create Comprehensive Universal Stubs & Remove Bad Drivers
         run: |
-          echo "Creating universal stub directories and headers to prevent missing file errors..."
+          echo "Cleaning up incompatible fingerprint drivers..."
+          rm -rf drivers/input/oppo_fp_drivers || true
+          sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
+          sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
+
+          echo "Creating universal stub directories and headers..."
           mkdir -p include/oppo include/soc/qcom include/linux include/soc/oppo vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
           mkdir -p drivers/misc/mediatek/smi drivers/misc/mediatek/ext_disp/mt6771
 
@@ -75,7 +80,7 @@ jobs:
           #endif
           EOF
 
-          # Oppo Phoenix Stub with explicit error macros
+          # Oppo Phoenix Stub
           cat << 'EOF' > include/linux/oppo_phoenix.h
           #ifndef _OPPO_PHOENIX_H
           #define _OPPO_PHOENIX_H
