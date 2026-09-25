@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Final Video Bypass)
+name: Build Realme 3i Custom Kernel (Smart Stub Linker Fix)
 
 on:
   workflow_dispatch:
@@ -28,22 +28,55 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
-      - name: Purge Broken Video and Fingerprint Drivers
+      - name: Inject Smart Stubs for Video & Fingerprint Drivers
         run: |
           echo "Removing problematic fingerprint drivers..."
           rm -rf drivers/input/oppo_fp_drivers || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
 
-          echo "Purging broken video layering and MT6771 video subfolders..."
-          rm -rf drivers/misc/mediatek/video/common/layering_rule_base || true
-          rm -rf drivers/misc/mediatek/video/mt6771/video || true
-          
-          # Remove references from Makefiles
-          find drivers/misc/mediatek/video/ -name "Makefile" | xargs sed -i '/layering_rule/d' || true
-          find drivers/misc/mediatek/video/ -name "Makefile" | xargs sed -i '/video/d' || true
+          echo "Creating smart C stubs to satisfy linker references..."
+          mkdir -p drivers/misc/mediatek/video/common/layering_rule_base
+          mkdir -p drivers/misc/mediatek/video/mt6771/video
+          mkdir -p drivers/misc/mediatek/video/common/color20
 
-          echo "Creating universal stub directories and headers..."
+          # Layering Rule Base Stub
+          cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/layering_stub.c
+          #include <linux/module.h>
+          #include <linux/kernel.h>
+          int layering_rule_calculation(void) { return 0; }
+          EXPORT_SYMBOL(layering_rule_calculation);
+          EOF
+
+          cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/Makefile
+          obj-y += layering_stub.o
+          EOF
+
+          # MT6771 Video Stub
+          cat << 'EOF' > drivers/misc/mediatek/video/mt6771/video/video_stub.c
+          #include <linux/module.h>
+          #include <linux/kernel.h>
+          int mtk_video_init_stub(void) { return 0; }
+          EXPORT_SYMBOL(mtk_video_init_stub);
+          EOF
+
+          cat << 'EOF' > drivers/misc/mediatek/video/mt6771/video/Makefile
+          obj-y += video_stub.o
+          EOF
+
+          # Color20 Stub
+          cat << 'EOF' > drivers/misc/mediatek/video/common/color20/color_stub.c
+          #include <linux/module.h>
+          #include <linux/kernel.h>
+          int mtk_color_adjust_stub(void) { return 0; }
+          EXPORT_SYMBOL(mtk_color_adjust_stub);
+          EOF
+
+          cat << 'EOF' > drivers/misc/mediatek/video/common/color20/Makefile
+          obj-y += color_stub.o
+          EOF
+
+          echo "Creating universal stub headers..."
           mkdir -p include/oppo include/soc/qcom include/linux include/soc/oppo vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
           mkdir -p drivers/misc/mediatek/smi drivers/misc/mediatek/ext_disp/mt6771
 
