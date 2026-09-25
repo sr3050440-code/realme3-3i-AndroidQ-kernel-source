@@ -35,14 +35,13 @@ jobs:
           sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
 
-          echo "Nuking old video subfolders and replacing with pure stubs..."
+          echo "Cleaning common video folders..."
           rm -rf drivers/misc/mediatek/video/common/layering_rule_base
-          rm -rf drivers/misc/mediatek/video/mt6771/video
           rm -rf drivers/misc/mediatek/video/common/color20
 
           mkdir -p drivers/misc/mediatek/video/common/layering_rule_base
-          mkdir -p drivers/misc/mediatek/video/mt6771/video
           mkdir -p drivers/misc/mediatek/video/common/color20
+          mkdir -p drivers/misc/mediatek/video/mt6771/video
 
           # Layering Rule Base Stub
           cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/layering_stub.c
@@ -56,16 +55,12 @@ jobs:
           obj-y := layering_stub.o
           EOF
 
-          # MT6771 Video Stub
-          cat << 'EOF' > drivers/misc/mediatek/video/mt6771/video/video_stub.c
-          #include <linux/module.h>
-          #include <linux/kernel.h>
-          int mtk_video_init_stub(void) { return 0; }
-          EXPORT_SYMBOL(mtk_video_init_stub);
-          EOF
-
-          cat << 'EOF' > drivers/misc/mediatek/video/mt6771/video/Makefile
-          obj-y := video_stub.o
+          # MT6771 Video Header (Placed precisely where debug.c expects it)
+          cat << 'EOF' > drivers/misc/mediatek/video/mt6771/video/layering_rule_base.h
+          #ifndef __LAYERING_RULE_BASE_H__
+          #define __LAYERING_RULE_BASE_H__
+          int layering_rule_calculation(void);
+          #endif
           EOF
 
           # Color20 Stub
@@ -159,31 +154,17 @@ jobs:
           cp include/linux/oppo_phoenix.h include/soc/oppo/oppo_phoenix.h 2>/dev/null || true
           cp include/linux/oppo_phoenix.h vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h 2>/dev/null || true
 
-          # Python patch to fix panic.c and comment out missing layering_rule_base.h in debug.c
           python3 -c "
-          import glob
-          
-          # Patch panic.c
+          path = 'kernel/panic.c'
           try:
-              with open('kernel/panic.c', 'r') as f:
+              with open(path, 'r') as f:
                   content = f.read()
               content = content.replace('phx_set_boot_error(ERROR_INT);', '// phx_set_boot_error(ERROR_INT);')
               content = content.replace('phx_set_boot_error', '// phx_set_boot_error')
-              with open('kernel/panic.c', 'w') as f:
+              with open(path, 'w') as f:
                   f.write(content)
           except Exception:
               pass
-
-          # Patch debug.c to remove missing header dependency
-          for path in glob.glob('drivers/misc/mediatek/video/**/debug.c', recursive=True):
-              try:
-                  with open(path, 'r') as f:
-                      content = f.read()
-                  content = content.replace('#include \"layering_rule_base.h\"', '// #include \"layering_rule_base.h\"')
-                  with open(path, 'w') as f:
-                      f.write(content)
-              except Exception:
-                  pass
           " || true
 
       - name: Compile Kernel
