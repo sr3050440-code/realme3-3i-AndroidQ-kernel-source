@@ -32,12 +32,22 @@ jobs:
 
       - name: Auto-Heal Missing Oppo Vendor Headers
         run: |
-          # Create dummy/stub header for missing OEM Oppo vendor files
+          # Create dummy/stub header with necessary definitions for oppo_phoenix
           mkdir -p vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
           cat << 'EOF' > vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h
           #ifndef _OPPO_PHOENIX_H
           #define _OPPO_PHOENIX_H
-          // Stub header generated for kernel build
+
+          #define phx_set_boot_stage(...) do {} while (0)
+
+          #define KERNEL_MM_INIT_DONE 0
+          #define KERNEL_LOCAL_IRQ_ENABLE 1
+          #define KERNEL_DELAYACCT_INIT_DONE 2
+          #define KERNEL_DRIVER_INIT_DONE 3
+          #define KERNEL_DO_INITCALLS_DONE 4
+          #define KERNEL_INIT_DONE 5
+          #define KERNEL_DO_BASIC_SETUP_DONE 6
+
           #endif
           EOF
 
