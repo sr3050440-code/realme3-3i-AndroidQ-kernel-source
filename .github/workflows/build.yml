@@ -38,9 +38,11 @@ jobs:
           export ARCH=arm64
           export SUBARCH=arm64
 
-          # Auto-Fix Python 3 missing 'cmp' function & Python 2 syntax
-          find tools/ -name "*.py" -exec sed -i '1s/^/def cmp(a, b):\n    return (a > b) - (a < b)\n/' {} + 2>/dev/null || true
+          # Fix Shebang on Line 1 and Insert 'cmp' at Line 2 safely
+          find tools/ -name "*.py" -exec sed -i '1s|^.*$|#!/usr/bin/env python3|' {} + 2>/dev/null || true
+          find tools/ -name "*.py" -exec sed -i '2i def cmp(a, b):\n    return (a > b) - (a < b)' {} + 2>/dev/null || true
           find tools/ -name "*.py" -exec 2to3 -w -n {} + 2>/dev/null || true
+          chmod -R +x tools/
 
           # 1. Defconfig Auto-Finder
           if [ -f arch/arm64/configs/oppo6771_defconfig ]; then
