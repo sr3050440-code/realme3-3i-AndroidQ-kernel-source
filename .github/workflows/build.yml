@@ -28,38 +28,19 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
-      - name: Auto-Patch Oppo Phoenix & Create Missing Stubs
+      - name: Auto-Create Comprehensive Universal Stubs
         run: |
-          echo "Completely removing problematic folders and cleaning references..."
-          rm -rf drivers/input/oppo_fp_drivers || true
-          rm -rf drivers/trust/oppo_fp_drivers || true
-          rm -rf drivers/misc/mediatek/video/mt6771/videox || true
-          rm -rf drivers/power/supply/oppo || true
-          
-          sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
-          sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
-          sed -i '/oppo_fp_drivers/d' drivers/trust/Kconfig || true
-          sed -i '/oppo_fp_drivers/d' drivers/trust/Makefile || true
-          sed -i '/videox/d' drivers/misc/mediatek/video/mt6771/Makefile || true
-          sed -i '/videox/d' drivers/misc/mediatek/video/Makefile || true
-          sed -i '/oppo/d' drivers/power/supply/Makefile || true
-          sed -i '/oppo/d' drivers/power/supply/mediatek/Makefile || true
-          sed -i '/oppo\/Kconfig/d' drivers/power/supply/Kconfig || true
+          echo "Creating universal stub directories and headers to prevent missing file errors..."
+          mkdir -p include/oppo include/soc/qcom include/linux include/soc/oppo vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
+          mkdir -p drivers/misc/mediatek/smi drivers/misc/mediatek/ext_disp/mt6771
 
-          mkdir -p include/soc/qcom drivers/misc/mediatek/smi drivers/misc/mediatek/ext_disp/mt6771
-          cat << 'EOF' > include/soc/qcom/scm.h
-          #ifndef _SOC_QCOM_SCM_H
-          #define _SOC_QCOM_SCM_H
-          static inline int qcom_scm_is_available(void) { return 0; }
-          #endif
-          EOF
-          cat << 'EOF' > include/soc/qcom/fsee.h
-          #ifndef _SOC_QCOM_FSEE_H
-          #define _SOC_QCOM_FSEE_H
+          # Universal Oppo Headers Stubs
+          cat << 'EOF' > include/oppo/oppo_vooc.h
+          #ifndef __OPPO_VOOC_H__
+          #define __OPPO_VOOC_H__
           #endif
           EOF
 
-          # Create missing stubs for display and power headers
           cat << 'EOF' > include/disp_assert_layer.h
           #ifndef __DISP_ASSERT_LAYER_H__
           #define __DISP_ASSERT_LAYER_H__
@@ -81,9 +62,20 @@ jobs:
           EOF
           cp include/disp_power.h drivers/misc/mediatek/ext_disp/mt6771/disp_power.h || true
 
-          sed -i '/phx_set_boot_/d' kernel/panic.c init/main.c || true
-          mkdir -p include/linux include/soc/oppo vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
-          
+          cat << 'EOF' > include/soc/qcom/scm.h
+          #ifndef _SOC_QCOM_SCM_H
+          #define _SOC_QCOM_SCM_H
+          static inline int qcom_scm_is_available(void) { return 0; }
+          #endif
+          EOF
+
+          cat << 'EOF' > include/soc/qcom/fsee.h
+          #ifndef _SOC_QCOM_FSEE_H
+          #define _SOC_QCOM_FSEE_H
+          #endif
+          EOF
+
+          # Oppo Phoenix Stub
           cat << 'EOF' > include/linux/oppo_phoenix.h
           #ifndef _OPPO_PHOENIX_H
           #define _OPPO_PHOENIX_H
@@ -125,15 +117,13 @@ jobs:
           fi
           echo "Selected Defconfig: $DEFCONFIG"
           make O=out $DEFCONFIG
+          
+          # Force compiler to include custom stub directories globally so no header is ever "missing"
           STUB_HEADER="$(pwd)/include/linux/oppo_phoenix.h"
-          make -j$(nproc --all) O=out \
-            HOSTCC=gcc \
-            HOSTCXX=g++ \
-            HOSTCFLAGS="-fcommon" \
-            HOSTCXXFLAGS="-fcommon" \
-            CC=aarch64-linux-android-gcc \
-            KCFLAGS="-Wno-error -fcommon -w -include ${STUB_HEADER}" \
-            2>&1 | tee build.log
+          MAKE_OPTS="O=out HOSTCC=gcc HOSTCXX=g++ HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon CC=aarch64-linux-android-gcc"
+          EXTRA_FLAGS="-Wno-error -fcommon -w -I$(pwd)/include -I$(pwd)/include/oppo -include ${STUB_HEADER}"
+          
+          make -j$(nproc --all) $MAKE_OPTS KCFLAGS="$EXTRA_FLAGS" 2>&1 | tee build.log
 
       - name: Auto-Heal DTB & Collect Artifacts
         run: |
