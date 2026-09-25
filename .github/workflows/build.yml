@@ -30,10 +30,12 @@ jobs:
 
       - name: Auto-Heal Defconfig & Compile Kernel
         run: |
+          # 1. Export Toolchains to PATH First
+          export PATH="$(pwd)/clang/bin:$(pwd)/gcc64/bin:$(pwd)/gcc32/bin:$PATH"
           export ARCH=arm64
           export SUBARCH=arm64
 
-          # 1. Defconfig Auto-Finder
+          # 2. Defconfig Auto-Finder
           if [ -f arch/arm64/configs/oppo6771_defconfig ]; then
             DEFCONFIG="oppo6771_defconfig"
           elif [ -f arch/arm64/configs/RMX1827_defconfig ]; then
@@ -45,22 +47,18 @@ jobs:
 
           make O=out $DEFCONFIG
 
-          # 2. Build Host Scripts using System GCC FIRST (Prevents fixdep relr.dyn error)
-          make O=out -j$(nproc --all) scripts HOSTCC=gcc HOSTCXX=g++ HOSTLD=/usr/bin/ld
-
-          # 3. Now Export Toolchains to PATH for Kernel Cross-Compilation
-          export PATH="$(pwd)/clang/bin:$(pwd)/gcc64/bin:$(pwd)/gcc32/bin:$PATH"
-
-          # 4. Compile Main Kernel
+          # 3. Compile Kernel (-fcommon fixes yylloc multiple definition error)
           make -j$(nproc --all) O=out \
             HOSTCC=gcc \
             HOSTCXX=g++ \
             HOSTLD=/usr/bin/ld \
+            HOSTCFLAGS="-fcommon" \
+            HOSTCXXFLAGS="-fcommon" \
             CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-android- \
             CROSS_COMPILE_ARM32=arm-linux-androideabi- \
-            KCFLAGS="-Wno-error" \
+            KCFLAGS="-Wno-error -fcommon" \
             2>&1 | tee build.log
 
       - name: Auto-Heal DTB & Collect Artifacts
