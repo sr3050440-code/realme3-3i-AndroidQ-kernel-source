@@ -40,7 +40,27 @@ jobs:
           # Create directories for stub headers
           mkdir -p include/linux include/soc/oppo include/soc/qcom vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
 
-          # Create oppo_phoenix.h stub
+          # 1. Qualcomm scm.h Stub (Fixes missing scm.h error)
+          cat << 'EOF' > include/soc/qcom/scm.h
+          #ifndef _SOC_QCOM_SCM_H
+          #define _SOC_QCOM_SCM_H
+          /* Stub header for Qualcomm SCM */
+          static inline int qcom_scm_is_available(void) { return 0; }
+          #endif
+          EOF
+
+          # 2. Qualcomm fsee.h Stub
+          cat << 'EOF' > include/soc/qcom/fsee.h
+          #ifndef _SOC_QCOM_FSEE_H
+          #define _SOC_QCOM_FSEE_H
+          /* Stub header for Oppo Fingerprint Driver */
+          #endif
+          EOF
+
+          # 3. Disable oppo_fp_drivers Makefiles dynamically
+          find . -type d -name "oppo_fp_drivers" -exec sh -c 'echo "# Disabled" > "$1/Makefile"' _ {} \;
+
+          # 4. Create oppo_phoenix.h stub
           cat << 'EOF' > include/linux/oppo_phoenix.h
           #ifndef _OPPO_PHOENIX_H
           #define _OPPO_PHOENIX_H
@@ -64,14 +84,6 @@ jobs:
           #define ERROR_NE 0
           #define ERROR_JE 0
 
-          #endif
-          EOF
-
-          # Create missing Qualcomm fsee.h stub for Oppo fingerprint driver
-          cat << 'EOF' > include/soc/qcom/fsee.h
-          #ifndef _SOC_QCOM_FSEE_H
-          #define _SOC_QCOM_FSEE_H
-          /* Stub header for Oppo Fingerprint Driver */
           #endif
           EOF
 
