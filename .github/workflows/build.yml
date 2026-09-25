@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout Kernel Source
@@ -17,10 +17,13 @@ jobs:
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
 
-      - name: Setup Build Dependencies
+      - name: Setup Build Dependencies & Python 2 Environment
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev libncurses-dev zip libgnutls28-dev python3 python-is-python3 2to3
+          sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev libncurses-dev zip libgnutls28-dev python2 python2-minimal
+
+          # Force 'python' to run as Python 2 for MediaTek DCT compatibility
+          sudo ln -sf /usr/bin/python2 /usr/bin/python
 
       - name: Download Toolchains & Fix Linker
         run: |
@@ -28,37 +31,8 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
           
-          # Remove conflicting legacy Clang linkers
+          # Fix: Remove conflicting legacy Clang linkers
           rm -f clang/bin/ld clang/bin/ld.lld
-
-      - name: Setup Python 2/3 Compatibility Layer & Fix Scripts
-        run: |
-          set -o pipefail
-
-          # 1. Inject Python 2 backward compatibility into Python 3 environment
-          PYTHON_SITE=$(python3 -c "import site; print(site.getsitepackages()[0])")
-          sudo bash -c "cat << 'EOF' > $PYTHON_SITE/sitecustomize.py
-          import string
-          import builtins
-
-          string.atoi = lambda s, *args: int(s, *args) if args else int(s)
-          string.atol = lambda s, *args: int(s, *args) if args else int(s)
-          string.atof = lambda s: float(s)
-          string.strip = lambda s, *args: s.strip(*args)
-          string.split = lambda s, *args: s.split(*args)
-          string.replace = lambda s, *args: s.replace(*args)
-          string.lower = lambda s: s.lower()
-          string.upper = lambda s: s.upper()
-
-          def cmp(a, b):
-              return (a > b) - (a < b)
-
-          builtins.cmp = cmp
-          EOF"
-
-          # 2. Fix old Python 2 print/syntax statements
-          find tools/ -name "*.py" -exec 2to3 -w -n {} + 2>/dev/null || true
-          chmod -R +x tools/
 
       - name: Auto-Heal Defconfig & Compile Kernel
         run: |
