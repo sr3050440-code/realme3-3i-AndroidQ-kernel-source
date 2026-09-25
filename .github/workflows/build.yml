@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Final Fix)
+name: Build Realme 3i Custom Kernel (Fixed 4700 Error)
 
 on:
   workflow_dispatch:
@@ -28,32 +28,40 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
-      - name: Ultimate Layering Rule & Missing Header Auto-Healer
+      - name: Fix Missing HRT Macros & Layering Headers
         run: |
           echo "Removing problematic fingerprint drivers..."
           rm -rf drivers/input/oppo_fp_drivers || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
 
-          echo "Creating missing layering_rule_base.h stub to satisfy videox headers..."
+          echo "Injecting missing HRT path macros and stubs for layering rules..."
           mkdir -p drivers/misc/mediatek/video/common/layering_rule_base/v1.1
           
-          # Create an empty or safe stub header where videox expects it
+          # Create comprehensive header to satisfy HRT macros around line 4700-4790
           cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/layering_rule_base.h
           #ifndef __LAYERING_RULE_BASE_H__
           #define __LAYERING_RULE_BASE_H__
+
+          #define HRT_PATH_RSZ_NONE 0
+          #define HRT_PATH_PIPE_SINGLE 1
+          #define HRT_PATH_DISP_DUAL_EXT 2
+          #define HRT_PATH_RSZ_PARTIAL 3
+          #define HRT_PATH_DISP_STABLE 4
+          #define HRT_PATH_UNKNOWN 5
+          #define HRT_PATH_NUM 6
+
           #define mmpfile_log_ex(args...) do { } while (0)
+
           #endif
           EOF
           
-          # Also place it inside v1.1 just in case
           cp drivers/misc/mediatek/video/common/layering_rule_base/layering_rule_base.h drivers/misc/mediatek/video/common/layering_rule_base/v1.1/layering_rule_base.h || true
 
           echo "Creating universal stub directories and headers..."
           mkdir -p include/oppo include/soc/qcom include/linux include/soc/oppo vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
           mkdir -p drivers/misc/mediatek/smi drivers/misc/mediatek/ext_disp/mt6771
 
-          # Universal Oppo Headers Stubs
           cat << 'EOF' > include/oppo/oppo_vooc.h
           #ifndef __OPPO_VOOC_H__
           #define __OPPO_VOOC_H__
@@ -94,7 +102,6 @@ jobs:
           #endif
           EOF
 
-          # Oppo Phoenix Stub with Android Log Macros
           cat << 'EOF' > include/linux/oppo_phoenix.h
           #ifndef _OPPO_PHOENIX_H
           #define _OPPO_PHOENIX_H
@@ -130,7 +137,6 @@ jobs:
           cp include/linux/oppo_phoenix.h include/soc/oppo/oppo_phoenix.h 2>/dev/null || true
           cp include/linux/oppo_phoenix.h vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h 2>/dev/null || true
 
-          # Clean up problematic panic calls in kernel/panic.c
           python3 -c "
           path = 'kernel/panic.c'
           try:
@@ -144,7 +150,7 @@ jobs:
               pass
           " || true
 
-      - name: Auto-Heal Defconfig & Compile Kernel
+      - name: Compile Kernel
         run: |
           set -o pipefail
           export PATH="$(pwd)/gcc64/bin:$(pwd)/gcc32/bin:$PATH"
@@ -168,14 +174,14 @@ jobs:
           
           make -j$(nproc --all) $MAKE_OPTS KCFLAGS="$EXTRA_FLAGS" 2>&1 | tee build.log
 
-      - name: Auto-Heal DTB & Collect Artifacts
+      - name: Collect Artifacts
         run: |
           mkdir -p release
           find out/arch/arm64/boot/ -maxdepth 2 -type f \( -name "Image*" -o -name "*.dtb" \) -exec cp {} release/ \;
           if [ ! -f release/Image.gz-dtb ] && [ -f release/Image.gz ]; then
             DTB_FILE=$(find out/arch/arm64/boot/dts/ -name "*.dtb" | head -n 1)
             if [ -n "$DTB_FILE" ]; then
-              echo "Auto-Healing: Stitching Image.gz with DTB..."
+              echo "Stitching Image.gz with DTB..."
               cat release/Image.gz "$DTB_FILE" > release/Image.gz-dtb
             fi
           fi
