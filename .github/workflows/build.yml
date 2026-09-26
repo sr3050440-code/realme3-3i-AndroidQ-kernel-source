@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Fix Phoenix Void Error)
+name: Build Realme 3i Custom Kernel (Direct Source Patch)
 
 on:
   workflow_dispatch:
@@ -28,7 +28,7 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
-      - name: Setup Headers and Patch Drivers
+      - name: Setup Headers and Patch Drivers Direct
         run: |
           echo "Removing problematic drivers from Makefiles..."
           rm -rf drivers/input/oppo_fp_drivers || true
@@ -65,6 +65,19 @@ jobs:
 
           #endif
           EOF
+
+          echo "Patching init/main.c and kernel/panic.c directly..."
+          # Direct patches to remove or satisfy phx_set_boot_stage in init/main.c
+          sed -i '1i #define phx_set_boot_stage(stage) (0)' init/main.c
+          sed -i '1i #define phx_set_boot_error(error) (0)' init/main.c
+          sed -i '1i #define phx_set_boot_info(info) (0)' init/main.c
+
+          sed -i '1i #define ERROR_KERNEL_PANIC 0' kernel/panic.c
+          sed -i '1i #define ERROR_HNT 0' kernel/panic.c
+          sed -i '1i #define ERROR_HINT 0' kernel/panic.c
+          sed -i '1i #define phx_set_boot_stage(stage) (0)' kernel/panic.c
+          sed -i '1i #define phx_set_boot_error(error) (0)' kernel/panic.c
+          sed -i '1i #define phx_set_boot_info(info) (0)' kernel/panic.c
 
           echo "Fixing layering rule code & headers..."
           find drivers/misc/mediatek/video/ -name "layering_rule*.c" | while read -r file; do
