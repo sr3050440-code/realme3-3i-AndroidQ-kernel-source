@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Fix ERROR_HNT)
+name: Build Realme 3i Custom Kernel (Fix Phoenix Void Error)
 
 on:
   workflow_dispatch:
@@ -144,29 +144,13 @@ jobs:
 
           #include <linux/types.h>
 
-          #ifndef ERROR_KERNEL_PANIC
           #define ERROR_KERNEL_PANIC 0
-          #endif
-
-          #ifndef ERROR_HNT
           #define ERROR_HNT 0
-          #endif
-
-          #ifndef ERROR_HINT
           #define ERROR_HINT 0
-          #endif
 
-          #ifndef phx_set_boot_stage
-          #define phx_set_boot_stage(stage) do { } while(0)
-          #endif
-
-          #ifndef phx_set_boot_error
-          #define phx_set_boot_error(error) do { } while(0)
-          #endif
-
-          #ifndef phx_set_boot_info
-          #define phx_set_boot_info(info) do { } while(0)
-          #endif
+          #define phx_set_boot_stage(stage) (0)
+          #define phx_set_boot_error(error) (0)
+          #define phx_set_boot_info(info) (0)
 
           #ifndef KERNEL_MM_INIT_DONE
           #define KERNEL_MM_INIT_DONE 0
