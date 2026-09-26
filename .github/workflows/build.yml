@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Clean Direct Patch)
+name: Build Realme 3i Custom Kernel (Syntax Safe Fix)
 
 on:
   workflow_dispatch:
@@ -28,24 +28,15 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
-      - name: Purge Phoenix Calls and Setup Drivers
+      - name: Setup Valid Phoenix Headers & Drivers
         run: |
           echo "Removing problematic drivers from Makefiles..."
           rm -rf drivers/input/oppo_fp_drivers || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
 
-          echo "Removing oppo_phoenix function calls directly from C files..."
-          # Clean phx calls completely from main.c and panic.c so compilation never stumbles on them
-          sed -i 's/if.*phx_set_boot_stage.*/if (0)/g' init/main.c || true
-          sed -i 's/phx_set_boot_stage(.*);/ /g' init/main.c || true
-          sed -i 's/phx_set_boot_info(.*);/ /g' init/main.c || true
-          sed -i 's/phx_set_boot_error(.*);/ /g' init/main.c || true
-
-          sed -i 's/if.*phx_set_boot_stage.*/if (0)/g' kernel/panic.c || true
-          sed -i 's/phx_set_boot_stage(.*);/ /g' kernel/panic.c || true
-          sed -i 's/phx_set_boot_info(.*);/ /g' kernel/panic.c || true
-          sed -i 's/phx_set_boot_error(.*);/ /g' kernel/panic.c || true
+          # Restore main.c and panic.c if modified in workspace
+          git checkout init/main.c kernel/panic.c 2>/dev/null || true
 
           echo "Fixing HRT Defines for MediaTek Video..."
           cat << 'EOF' > include/hrt_fix.h
@@ -106,9 +97,53 @@ jobs:
           mkdir -p include/video/
           cp drivers/misc/mediatek/video/mt6771/videox/layering_rule*.h include/ 2>/dev/null || true
 
-          echo "Creating safe complete headers..."
+          echo "Creating complete, syntactically valid Phoenix header..."
           mkdir -p include/oppo include/soc/qcom include/linux include/soc/oppo vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
           mkdir -p drivers/misc/mediatek/smi drivers/misc/mediatek/ext_disp/mt6771
+
+          cat << 'EOF' > include/linux/oppo_phoenix.h
+          #ifndef _OPPO_PHOENIX_H
+          #define _OPPO_PHOENIX_H
+
+          #include <linux/types.h>
+
+          #define ERROR_KERNEL_PANIC 0
+          #define ERROR_HNT 0
+          #define ERROR_HINT 0
+
+          static inline int phx_set_boot_stage(int stage) { return 0; }
+          static inline int phx_set_boot_error(int error) { return 0; }
+          static inline int phx_set_boot_info(int info) { return 0; }
+
+          #ifndef KERNEL_MM_INIT_DONE
+          #define KERNEL_MM_INIT_DONE 0
+          #define KERNEL_LOCAL_IRQ_ENABLE 1
+          #define KERNEL_DELAYACCT_INIT_DONE 2
+          #define KERNEL_DRIVER_INIT_DONE 3
+          #define KERNEL_DO_INITCALLS_DONE 4
+          #define KERNEL_INIT_DONE 5
+          #define KERNEL_DO_BASIC_SETUP_DONE 6
+          #endif
+
+          #ifndef ANDROID_LOG_INFO
+          #define ANDROID_LOG_UNKNOWN 0
+          #define ANDROID_LOG_DEFAULT 1
+          #define ANDROID_LOG_VERBOSE 2
+          #define ANDROID_LOG_DEBUG 3
+          #define ANDROID_LOG_INFO 4
+          #define ANDROID_LOG_WARN 5
+          #define ANDROID_LOG_ERROR 6
+          #define ANDROID_LOG_FATAL 7
+          #define ANDROID_LOG_SILENT 8
+          #endif
+
+          #endif
+          EOF
+
+          # Copy phoenix header across all include lookup paths
+          cp include/linux/oppo_phoenix.h include/soc/oppo/oppo_phoenix.h 2>/dev/null || true
+          cp include/linux/oppo_phoenix.h include/oppo/oppo_phoenix.h 2>/dev/null || true
+          cp include/linux/oppo_phoenix.h vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h 2>/dev/null || true
 
           cat << 'EOF' > include/oppo/oppo_vooc.h
           #ifndef __OPPO_VOOC_H__
@@ -149,47 +184,6 @@ jobs:
           #define _SOC_QCOM_FSEE_H
           #endif
           EOF
-
-          cat << 'EOF' > include/linux/oppo_phoenix.h
-          #ifndef _OPPO_PHOENIX_H
-          #define _OPPO_PHOENIX_H
-
-          #include <linux/types.h>
-
-          #define ERROR_KERNEL_PANIC 0
-          #define ERROR_HNT 0
-          #define ERROR_HINT 0
-
-          #define phx_set_boot_stage(stage) (0)
-          #define phx_set_boot_error(error) (0)
-          #define phx_set_boot_info(info) (0)
-
-          #ifndef KERNEL_MM_INIT_DONE
-          #define KERNEL_MM_INIT_DONE 0
-          #define KERNEL_LOCAL_IRQ_ENABLE 1
-          #define KERNEL_DELAYACCT_INIT_DONE 2
-          #define KERNEL_DRIVER_INIT_DONE 3
-          #define KERNEL_DO_INITCALLS_DONE 4
-          #define KERNEL_INIT_DONE 5
-          #define KERNEL_DO_BASIC_SETUP_DONE 6
-          #endif
-
-          #ifndef ANDROID_LOG_INFO
-          #define ANDROID_LOG_UNKNOWN 0
-          #define ANDROID_LOG_DEFAULT 1
-          #define ANDROID_LOG_VERBOSE 2
-          #define ANDROID_LOG_DEBUG 3
-          #define ANDROID_LOG_INFO 4
-          #define ANDROID_LOG_WARN 5
-          #define ANDROID_LOG_ERROR 6
-          #define ANDROID_LOG_FATAL 7
-          #define ANDROID_LOG_SILENT 8
-          #endif
-
-          #endif
-          EOF
-          cp include/linux/oppo_phoenix.h include/soc/oppo/oppo_phoenix.h 2>/dev/null || true
-          cp include/linux/oppo_phoenix.h vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h 2>/dev/null || true
 
           python3 -c "
           import glob
@@ -233,10 +227,11 @@ jobs:
           # 3. Non-interactive config sync
           yes "" | make O=out oldconfig || true
 
+          PHOENIX_HEADER="$(pwd)/include/linux/oppo_phoenix.h"
           HRT_HEADER="$(pwd)/include/hrt_fix.h"
           MAKE_OPTS="O=out HOSTCC=gcc HOSTCXX=g++ HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon CC=aarch64-linux-android-gcc"
           
-          EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -fno-stack-protector -I$(pwd)/include -I$(pwd)/include/oppo -I$(pwd)/drivers/misc/mediatek/video/mt6771/videox -include ${HRT_HEADER}"
+          EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -fno-stack-protector -I$(pwd)/include -I$(pwd)/include/oppo -I$(pwd)/drivers/misc/mediatek/video/mt6771/videox -include ${PHOENIX_HEADER} -include ${HRT_HEADER}"
           
           if ! make -j$(nproc --all) $MAKE_OPTS KCFLAGS="$EXTRA_FLAGS" KBUILD_CFLAGS="-fno-stack-protector" 2>&1 | tee build.log; then
             echo "=============================================="
