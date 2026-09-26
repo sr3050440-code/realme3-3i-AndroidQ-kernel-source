@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Layering Rule Permanent Fix)
+name: Build Realme 3i Custom Kernel
 
 on:
   workflow_dispatch:
@@ -28,42 +28,13 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
-      - name: Patch Drivers & Clean Broken Layering Code
+      - name: Create Missing Headers & Inject Definitions
         run: |
-          echo "Removing problematic fingerprint drivers..."
-          rm -rf drivers/input/oppo_fp_drivers || true
-          sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
-          sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
-
-          # Restore core init files
-          git checkout init/main.c kernel/panic.c 2>/dev/null || true
-
-          echo "Completely Overriding ALL layering_rule files recursively..."
-          # Find every layering_rule .c file under video driver and strip out MediaTek's broken code
-          find drivers/misc/mediatek/video/ -name "*layering_rule*.c" | while read -r file; do
-            cat << 'EOF' > "$file"
-          #include <linux/module.h>
-          #include <linux/kernel.h>
-
-          int layering_rule_init(void) { return 0; }
-          void layering_rule_exit(void) {}
-          int layering_rule_start(void) { return 0; }
-          EOF
-          done
-
-          # Find every layering_rule .h file and erase their broken struct definitions
-          find drivers/misc/mediatek/video/ -name "*layering_rule*.h" | while read -r file; do
-            cat << 'EOF' > "$file"
-          #ifndef __LAYERING_RULE_DUMMY_H__
-          #define __LAYERING_RULE_DUMMY_H__
-          #endif
-          EOF
-          done
-
           echo "Creating complete, syntactically valid Phoenix & HRT Headers..."
           mkdir -p include/oppo include/soc/qcom include/linux include/soc/oppo vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
           mkdir -p drivers/misc/mediatek/smi drivers/misc/mediatek/ext_disp/mt6771 drivers/misc/mediatek/video/mt6771/videox/ include/video/
 
+          # Complete HRT Fix Header for layering_rule_base.c
           cat << 'EOF' > include/hrt_fix.h
           #ifndef __HRT_FIX_H__
           #define __HRT_FIX_H__
@@ -183,20 +154,6 @@ jobs:
           #endif
           EOF
 
-          python3 -c "
-          import glob
-          for filepath in glob.glob('drivers/power/supply/mediatek/charger/*charger*.c'):
-              try:
-                  with open(filepath, 'r') as f:
-                      txt = f.read()
-                  txt = txt.replace('static int __init', 'int')
-                  txt = txt.replace('static void __exit', 'void')
-                  with open(filepath, 'w') as f:
-                      f.write(txt)
-              except Exception:
-                  pass
-          " || true
-
       - name: Compile Kernel
         run: |
           set -o pipefail
@@ -205,6 +162,7 @@ jobs:
           export SUBARCH=arm64
           export CROSS_COMPILE=aarch64-linux-android-
           export CROSS_COMPILE_ARM32=arm-linux-androideabi-
+          
           if [ -f arch/arm64/configs/oppo6771_defconfig ]; then
             DEFCONFIG="oppo6771_defconfig"
           elif [ -f arch/arm64/configs/RMX1827_defconfig ]; then
@@ -229,7 +187,7 @@ jobs:
           HRT_HEADER="$(pwd)/include/hrt_fix.h"
           MAKE_OPTS="O=out HOSTCC=gcc HOSTCXX=g++ HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon CC=aarch64-linux-android-gcc"
           
-          EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -fno-stack-protector -I$(pwd)/include -I$(pwd)/include/oppo -I$(pwd)/drivers/misc/mediatek/video/mt6771/videox -include ${PHOENIX_HEADER} -include ${HRT_HEADER}"
+          EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -fno-stack-protector -I$(pwd)/include -I$(pwd)/include/oppo -I$(pwd)/drivers/misc/mediatek/video/common/layering_rule_base/v1 -I$(pwd)/drivers/misc/mediatek/video/mt6771/videox -include ${PHOENIX_HEADER} -include ${HRT_HEADER}"
           
           if ! make -j$(nproc --all) $MAKE_OPTS KCFLAGS="$EXTRA_FLAGS" KBUILD_CFLAGS="-fno-stack-protector" 2>&1 | tee build.log; then
             echo "=============================================="
