@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Direct Source Patch)
+name: Build Realme 3i Custom Kernel (Clean Direct Patch)
 
 on:
   workflow_dispatch:
@@ -28,12 +28,24 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
-      - name: Setup Headers and Patch Drivers Direct
+      - name: Purge Phoenix Calls and Setup Drivers
         run: |
           echo "Removing problematic drivers from Makefiles..."
           rm -rf drivers/input/oppo_fp_drivers || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
+
+          echo "Removing oppo_phoenix function calls directly from C files..."
+          # Clean phx calls completely from main.c and panic.c so compilation never stumbles on them
+          sed -i 's/if.*phx_set_boot_stage.*/if (0)/g' init/main.c || true
+          sed -i 's/phx_set_boot_stage(.*);/ /g' init/main.c || true
+          sed -i 's/phx_set_boot_info(.*);/ /g' init/main.c || true
+          sed -i 's/phx_set_boot_error(.*);/ /g' init/main.c || true
+
+          sed -i 's/if.*phx_set_boot_stage.*/if (0)/g' kernel/panic.c || true
+          sed -i 's/phx_set_boot_stage(.*);/ /g' kernel/panic.c || true
+          sed -i 's/phx_set_boot_info(.*);/ /g' kernel/panic.c || true
+          sed -i 's/phx_set_boot_error(.*);/ /g' kernel/panic.c || true
 
           echo "Fixing HRT Defines for MediaTek Video..."
           cat << 'EOF' > include/hrt_fix.h
@@ -65,19 +77,6 @@ jobs:
 
           #endif
           EOF
-
-          echo "Patching init/main.c and kernel/panic.c directly..."
-          # Direct patches to remove or satisfy phx_set_boot_stage in init/main.c
-          sed -i '1i #define phx_set_boot_stage(stage) (0)' init/main.c
-          sed -i '1i #define phx_set_boot_error(error) (0)' init/main.c
-          sed -i '1i #define phx_set_boot_info(info) (0)' init/main.c
-
-          sed -i '1i #define ERROR_KERNEL_PANIC 0' kernel/panic.c
-          sed -i '1i #define ERROR_HNT 0' kernel/panic.c
-          sed -i '1i #define ERROR_HINT 0' kernel/panic.c
-          sed -i '1i #define phx_set_boot_stage(stage) (0)' kernel/panic.c
-          sed -i '1i #define phx_set_boot_error(error) (0)' kernel/panic.c
-          sed -i '1i #define phx_set_boot_info(info) (0)' kernel/panic.c
 
           echo "Fixing layering rule code & headers..."
           find drivers/misc/mediatek/video/ -name "layering_rule*.c" | while read -r file; do
@@ -234,11 +233,10 @@ jobs:
           # 3. Non-interactive config sync
           yes "" | make O=out oldconfig || true
 
-          PHOENIX_HEADER="$(pwd)/include/linux/oppo_phoenix.h"
           HRT_HEADER="$(pwd)/include/hrt_fix.h"
           MAKE_OPTS="O=out HOSTCC=gcc HOSTCXX=g++ HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon CC=aarch64-linux-android-gcc"
           
-          EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -fno-stack-protector -I$(pwd)/include -I$(pwd)/include/oppo -I$(pwd)/drivers/misc/mediatek/video/mt6771/videox -include ${PHOENIX_HEADER} -include ${HRT_HEADER}"
+          EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -fno-stack-protector -I$(pwd)/include -I$(pwd)/include/oppo -I$(pwd)/drivers/misc/mediatek/video/mt6771/videox -include ${HRT_HEADER}"
           
           if ! make -j$(nproc --all) $MAKE_OPTS KCFLAGS="$EXTRA_FLAGS" KBUILD_CFLAGS="-fno-stack-protector" 2>&1 | tee build.log; then
             echo "=============================================="
