@@ -1,226 +1,43 @@
-name: Build Realme 3i Custom Kernel
+name: Build Realme 3i Kernel
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04
 
     steps:
-      - name: Checkout Kernel Source
-        uses: actions/checkout@v4
+      - name: Checkout Source Code
+        uses: actions/checkout@v3
 
-      - name: Auto-Heal Git & Workspace Setup
-        run: |
-          git config --global --add safe.directory "*"
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
-
-      - name: Setup Build Dependencies & Python 2 Environment
+      - name: Install Build Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev libncurses-dev zip libgnutls28-dev python2 python2-minimal
           sudo ln -sf /usr/bin/python2 /usr/bin/python
 
-      - name: Download Toolchains
+      - name: Download GCC Toolchains
         run: |
-          git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
-          git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
-
-      - name: Create Missing Headers & Inject Definitions
-        run: |
-          echo "Creating complete, syntactically valid Phoenix & HRT Headers..."
-          mkdir -p include/oppo include/soc/qcom include/linux include/soc/oppo vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
-          mkdir -p drivers/misc/mediatek/smi drivers/misc/mediatek/ext_disp/mt6771 drivers/misc/mediatek/video/mt6771/videox/ include/video/
-
-          # Complete HRT Fix Header for layering_rule_base.c
-          cat << 'EOF' > include/hrt_fix.h
-          #ifndef __HRT_FIX_H__
-          #define __HRT_FIX_H__
-
-          #ifndef HRT_LEVEL_NUM
-          #define HRT_LEVEL_NUM 4
-          #define HRT_LEVEL_LEVEL0 0
-          #define HRT_LEVEL_LEVEL1 1
-          #define HRT_LEVEL_LEVEL2 2
-          #define HRT_LEVEL_LEVEL3 3
-          #define HRT_LEVEL_DEFAULT 0
-          #define HRT_OFF_LEVEL_LEVEL0 0
-          #define HRT_OFF_LEVEL_LEVEL1 1
-          #define HRT_OFF_LEVEL_LEVEL2 2
-          #define HRT_OFF_LEVEL_LEVEL3 3
-          #define HRT_OPP_LEVEL_DEFAULT 0
-          #define HRT_OPP_LEVEL_LEVEL1 1
-          #define HRT_OPP_LEVEL_LEVEL2 2
-          #define HRT_OPP_LEVEL_LEVEL3 3
-          #define HRT_PRIMARY 0
-          #define HRT_SECONDARY 1
-          #define HRT_AEE_HEIGHT 0
-          #define HRT_ROUND_CORNER_WEIGHT 0
-          #define HRT_UINT_WEIGHT 0
-          #define HRT_UINT_BOUND_BPP 1
-          #endif
-
-          enum opp_level {
-              HRT_OPP_LEVEL_0 = 0,
-              HRT_OPP_LEVEL_1,
-              HRT_OPP_LEVEL_2
-          };
-
-          #endif
-          EOF
-
-          cat << 'EOF' > include/linux/oppo_phoenix.h
-          #ifndef _OPPO_PHOENIX_H
-          #define _OPPO_PHOENIX_H
-
-          #include <linux/types.h>
-
-          #define ERROR_KERNEL_PANIC 0
-          #define ERROR_HNT 0
-          #define ERROR_HINT 0
-
-          static inline int phx_set_boot_stage(int stage) { return 0; }
-          static inline int phx_set_boot_error(int error) { return 0; }
-          static inline int phx_set_boot_info(int info) { return 0; }
-
-          #ifndef KERNEL_MM_INIT_DONE
-          #define KERNEL_MM_INIT_DONE 0
-          #define KERNEL_LOCAL_IRQ_ENABLE 1
-          #define KERNEL_DELAYACCT_INIT_DONE 2
-          #define KERNEL_DRIVER_INIT_DONE 3
-          #define KERNEL_DO_INITCALLS_DONE 4
-          #define KERNEL_INIT_DONE 5
-          #define KERNEL_DO_BASIC_SETUP_DONE 6
-          #endif
-
-          #ifndef ANDROID_LOG_INFO
-          #define ANDROID_LOG_UNKNOWN 0
-          #define ANDROID_LOG_DEFAULT 1
-          #define ANDROID_LOG_VERBOSE 2
-          #define ANDROID_LOG_DEBUG 3
-          #define ANDROID_LOG_INFO 4
-          #define ANDROID_LOG_WARN 5
-          #define ANDROID_LOG_ERROR 6
-          #define ANDROID_LOG_FATAL 7
-          #define ANDROID_LOG_SILENT 8
-          #endif
-
-          #endif
-          EOF
-
-          cp include/linux/oppo_phoenix.h include/soc/oppo/oppo_phoenix.h 2>/dev/null || true
-          cp include/linux/oppo_phoenix.h include/oppo/oppo_phoenix.h 2>/dev/null || true
-          cp include/linux/oppo_phoenix.h vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h 2>/dev/null || true
-
-          cat << 'EOF' > include/oppo/oppo_vooc.h
-          #ifndef __OPPO_VOOC_H__
-          #define __OPPO_VOOC_H__
-          #endif
-          EOF
-
-          cat << 'EOF' > include/disp_assert_layer.h
-          #ifndef __DISP_ASSERT_LAYER_H__
-          #define __DISP_ASSERT_LAYER_H__
-          #endif
-          EOF
-          cp include/disp_assert_layer.h drivers/misc/mediatek/smi/disp_assert_layer.h || true
-
-          cat << 'EOF' > include/disp_drv_log.h
-          #ifndef __DISP_DRV_LOG_H__
-          #define __DISP_DRV_LOG_H__
-          #endif
-          EOF
-          cp include/disp_drv_log.h drivers/misc/mediatek/ext_disp/mt6771/disp_drv_log.h || true
-
-          cat << 'EOF' > include/disp_power.h
-          #ifndef __DISP_POWER_H__
-          #define __DISP_POWER_H__
-          #endif
-          EOF
-          cp include/disp_power.h drivers/misc/mediatek/ext_disp/mt6771/disp_power.h || true
-
-          cat << 'EOF' > include/soc/qcom/scm.h
-          #ifndef _SOC_QCOM_SCM_H
-          #define _SOC_QCOM_SCM_H
-          static inline int qcom_scm_is_available(void) { return 0; }
-          #endif
-          EOF
-
-          cat << 'EOF' > include/soc/qcom/fsee.h
-          #ifndef _SOC_QCOM_FSEE_H
-          #define _SOC_QCOM_FSEE_H
-          #endif
-          EOF
+          git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64
+          git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32
 
       - name: Compile Kernel
         run: |
-          set -o pipefail
           export PATH="$(pwd)/gcc64/bin:$(pwd)/gcc32/bin:$PATH"
           export ARCH=arm64
           export SUBARCH=arm64
           export CROSS_COMPILE=aarch64-linux-android-
           export CROSS_COMPILE_ARM32=arm-linux-androideabi-
+
+          # Using your repo's defconfig
+          make O=out oppo6771_defconfig
           
-          if [ -f arch/arm64/configs/oppo6771_defconfig ]; then
-            DEFCONFIG="oppo6771_defconfig"
-          elif [ -f arch/arm64/configs/RMX1827_defconfig ]; then
-            DEFCONFIG="RMX1827_defconfig"
-          else
-            DEFCONFIG=$(basename $(find arch/arm64/configs/ -name "*defconfig" | head -n 1))
-          fi
-          echo "Selected Defconfig: $DEFCONFIG"
+          # Build kernel with warning suppression
+          make -j$(nproc --all) O=out KCFLAGS="-Wno-error -w -fno-stack-protector -fcommon"
 
-          # Disable stack protector inside defconfig
-          sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/' arch/arm64/configs/$DEFCONFIG || true
-          sed -i 's/CONFIG_CC_STACKPROTECTOR_REGULAR=y/# CONFIG_CC_STACKPROTECTOR_REGULAR is not set/' arch/arm64/configs/$DEFCONFIG || true
-          echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> arch/arm64/configs/$DEFCONFIG
-
-          # Generate configuration
-          make O=out $DEFCONFIG
-
-          # Non-interactive config sync
-          yes "" | make O=out oldconfig || true
-
-          PHOENIX_HEADER="$(pwd)/include/linux/oppo_phoenix.h"
-          HRT_HEADER="$(pwd)/include/hrt_fix.h"
-          MAKE_OPTS="O=out HOSTCC=gcc HOSTCXX=g++ HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon CC=aarch64-linux-android-gcc"
-          
-          EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -fno-stack-protector -DERROR_HNT=0 -DERROR_HINT=0 -I$(pwd)/include -I$(pwd)/include/oppo -I$(pwd)/drivers/misc/mediatek/video/common/layering_rule_base/v1 -I$(pwd)/drivers/misc/mediatek/video/mt6771/videox -include ${PHOENIX_HEADER} -include ${HRT_HEADER}"
-          
-          if ! make -j$(nproc --all) $MAKE_OPTS KCFLAGS="$EXTRA_FLAGS" KBUILD_CFLAGS="-fno-stack-protector -DERROR_HNT=0 -DERROR_HINT=0" 2>&1 | tee build.log; then
-            echo "=============================================="
-            echo "BUILD FAILED! Searching for actual error lines:"
-            echo "=============================================="
-            grep -i -E "error:" build.log | tail -n 40 || tail -n 150 build.log
-            exit 1
-          fi
-
-      - name: Collect Artifacts
-        run: |
-          mkdir -p release
-          find out/arch/arm64/boot/ -maxdepth 2 -type f \( -name "Image*" -o -name "*.dtb" \) -exec cp {} release/ \;
-          if [ ! -f release/Image.gz-dtb ] && [ -f release/Image.gz ]; then
-            DTB_FILE=$(find out/arch/arm64/boot/dts/ -name "*.dtb" | head -n 1)
-            if [ -n "$DTB_FILE" ]; then
-              echo "Stitching Image.gz with DTB..."
-              cat release/Image.gz "$DTB_FILE" > release/Image.gz-dtb
-            fi
-          fi
-          echo "Final Artifacts:"
-          ls -la release/
-
-      - name: Upload Kernel Image
-        if: always()
-        uses: actions/upload-artifact@v4
+      - name: Upload Kernel Artifact
+        uses: actions/upload-artifact@v3
         with:
           name: Realme3i-Kernel-Image
-          path: release/
-
-      - name: Upload Error Log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Kernel-Build-Log
-          path: build.log
+          path: out/arch/arm64/boot/Image.gz-dtb
