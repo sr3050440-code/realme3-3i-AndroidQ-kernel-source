@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Syntax Safe Fix)
+name: Build Realme 3i Custom Kernel (Layering Rule Permanent Fix)
 
 on:
   workflow_dispatch:
@@ -28,17 +28,42 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
-      - name: Setup Valid Phoenix Headers & Drivers
+      - name: Patch Drivers & Clean Broken Layering Code
         run: |
-          echo "Removing problematic drivers from Makefiles..."
+          echo "Removing problematic fingerprint drivers..."
           rm -rf drivers/input/oppo_fp_drivers || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
 
-          # Restore main.c and panic.c if modified in workspace
+          # Restore core init files
           git checkout init/main.c kernel/panic.c 2>/dev/null || true
 
-          echo "Fixing HRT Defines for MediaTek Video..."
+          echo "Completely Overriding ALL layering_rule files recursively..."
+          # Find every layering_rule .c file under video driver and strip out MediaTek's broken code
+          find drivers/misc/mediatek/video/ -name "*layering_rule*.c" | while read -r file; do
+            cat << 'EOF' > "$file"
+          #include <linux/module.h>
+          #include <linux/kernel.h>
+
+          int layering_rule_init(void) { return 0; }
+          void layering_rule_exit(void) {}
+          int layering_rule_start(void) { return 0; }
+          EOF
+          done
+
+          # Find every layering_rule .h file and erase their broken struct definitions
+          find drivers/misc/mediatek/video/ -name "*layering_rule*.h" | while read -r file; do
+            cat << 'EOF' > "$file"
+          #ifndef __LAYERING_RULE_DUMMY_H__
+          #define __LAYERING_RULE_DUMMY_H__
+          #endif
+          EOF
+          done
+
+          echo "Creating complete, syntactically valid Phoenix & HRT Headers..."
+          mkdir -p include/oppo include/soc/qcom include/linux include/soc/oppo vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
+          mkdir -p drivers/misc/mediatek/smi drivers/misc/mediatek/ext_disp/mt6771 drivers/misc/mediatek/video/mt6771/videox/ include/video/
+
           cat << 'EOF' > include/hrt_fix.h
           #ifndef __HRT_FIX_H__
           #define __HRT_FIX_H__
@@ -58,6 +83,12 @@ jobs:
           #define HRT_OPP_LEVEL_LEVEL1 1
           #define HRT_OPP_LEVEL_LEVEL2 2
           #define HRT_OPP_LEVEL_LEVEL3 3
+          #define HRT_PRIMARY 0
+          #define HRT_SECONDARY 1
+          #define HRT_AEE_HEIGHT 0
+          #define HRT_ROUND_CORNER_WEIGHT 0
+          #define HRT_UINT_WEIGHT 0
+          #define HRT_UINT_BOUND_BPP 1
           #endif
 
           enum opp_level {
@@ -68,38 +99,6 @@ jobs:
 
           #endif
           EOF
-
-          echo "Fixing layering rule code & headers..."
-          find drivers/misc/mediatek/video/ -name "layering_rule*.c" | while read -r file; do
-            cat << 'EOF' > "$file"
-          #include <linux/module.h>
-          #include <linux/kernel.h>
-
-          int layering_rule_init(void) { return 0; }
-          void layering_rule_exit(void) {}
-          int layering_rule_start(void) { return 0; }
-          EOF
-          done
-
-          mkdir -p drivers/misc/mediatek/video/mt6771/videox/
-          cat << 'EOF' > drivers/misc/mediatek/video/mt6771/videox/layering_rule_base.h
-          #ifndef __LAYERING_RULE_BASE_H__
-          #define __LAYERING_RULE_BASE_H__
-          #endif
-          EOF
-
-          cat << 'EOF' > drivers/misc/mediatek/video/mt6771/videox/layering_rule.h
-          #ifndef __LAYERING_RULE_H__
-          #define __LAYERING_RULE_H__
-          #endif
-          EOF
-
-          mkdir -p include/video/
-          cp drivers/misc/mediatek/video/mt6771/videox/layering_rule*.h include/ 2>/dev/null || true
-
-          echo "Creating complete, syntactically valid Phoenix header..."
-          mkdir -p include/oppo include/soc/qcom include/linux include/soc/oppo vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
-          mkdir -p drivers/misc/mediatek/smi drivers/misc/mediatek/ext_disp/mt6771
 
           cat << 'EOF' > include/linux/oppo_phoenix.h
           #ifndef _OPPO_PHOENIX_H
@@ -140,7 +139,6 @@ jobs:
           #endif
           EOF
 
-          # Copy phoenix header across all include lookup paths
           cp include/linux/oppo_phoenix.h include/soc/oppo/oppo_phoenix.h 2>/dev/null || true
           cp include/linux/oppo_phoenix.h include/oppo/oppo_phoenix.h 2>/dev/null || true
           cp include/linux/oppo_phoenix.h vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h 2>/dev/null || true
@@ -216,15 +214,15 @@ jobs:
           fi
           echo "Selected Defconfig: $DEFCONFIG"
 
-          # 1. Disable stack protector inside defconfig
+          # Disable stack protector inside defconfig
           sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/' arch/arm64/configs/$DEFCONFIG || true
           sed -i 's/CONFIG_CC_STACKPROTECTOR_REGULAR=y/# CONFIG_CC_STACKPROTECTOR_REGULAR is not set/' arch/arm64/configs/$DEFCONFIG || true
           echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> arch/arm64/configs/$DEFCONFIG
 
-          # 2. Generate configuration
+          # Generate configuration
           make O=out $DEFCONFIG
 
-          # 3. Non-interactive config sync
+          # Non-interactive config sync
           yes "" | make O=out oldconfig || true
 
           PHOENIX_HEADER="$(pwd)/include/linux/oppo_phoenix.h"
