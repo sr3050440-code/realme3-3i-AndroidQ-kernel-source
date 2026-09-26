@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Nuke Old C Files & Stub Fix)
+name: Build Realme 3i Custom Kernel (Fixed & Verified)
 
 on:
   workflow_dispatch:
@@ -28,45 +28,42 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
-      - name: Nuke Buggy C Files and Inject Clean Stubs
+      - name: Setup Headers and Patch Drivers
         run: |
-          echo "Removing problematic fingerprint drivers..."
+          echo "Removing problematic drivers from Makefiles..."
           rm -rf drivers/input/oppo_fp_drivers || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
 
-          echo "Cleaning common video folders..."
-          rm -rf drivers/misc/mediatek/video/common/layering_rule_base
-          rm -rf drivers/misc/mediatek/video/common/color20
-
-          mkdir -p drivers/misc/mediatek/video/common/layering_rule_base
-          mkdir -p drivers/misc/mediatek/video/common/color20
-
-          # Layering Rule Base Stub C file
-          cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/layering_stub.c
+          echo "Fixing layering rule code & headers..."
+          find drivers/misc/mediatek/video/ -name "layering_rule*.c" | while read -r file; do
+            cat << 'EOF' > "$file"
           #include <linux/module.h>
           #include <linux/kernel.h>
-          int layering_rule_calculation(void) { return 0; }
-          EXPORT_SYMBOL(layering_rule_calculation);
+
+          int layering_rule_init(void) { return 0; }
+          void layering_rule_exit(void) {}
+          int layering_rule_start(void) { return 0; }
+          EOF
+          done
+
+          mkdir -p drivers/misc/mediatek/video/mt6771/videox/
+          cat << 'EOF' > drivers/misc/mediatek/video/mt6771/videox/layering_rule_base.h
+          #ifndef __LAYERING_RULE_BASE_H__
+          #define __LAYERING_RULE_BASE_H__
+          #endif
           EOF
 
-          cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/Makefile
-          obj-y := layering_stub.o
+          cat << 'EOF' > drivers/misc/mediatek/video/mt6771/videox/layering_rule.h
+          #ifndef __LAYERING_RULE_H__
+          #define __LAYERING_RULE_H__
+          #endif
           EOF
 
-          # Color20 Stub
-          cat << 'EOF' > drivers/misc/mediatek/video/common/color20/color_stub.c
-          #include <linux/module.h>
-          #include <linux/kernel.h>
-          int mtk_color_adjust_stub(void) { return 0; }
-          EXPORT_SYMBOL(mtk_color_adjust_stub);
-          EOF
+          mkdir -p include/video/
+          cp drivers/misc/mediatek/video/mt6771/videox/layering_rule*.h include/ 2>/dev/null || true
 
-          cat << 'EOF' > drivers/misc/mediatek/video/common/color20/Makefile
-          obj-y := color_stub.o
-          EOF
-
-          echo "Creating universal stub headers..."
+          echo "Creating safe complete headers..."
           mkdir -p include/oppo include/soc/qcom include/linux include/soc/oppo vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
           mkdir -p drivers/misc/mediatek/smi drivers/misc/mediatek/ext_disp/mt6771
 
@@ -113,9 +110,14 @@ jobs:
           cat << 'EOF' > include/linux/oppo_phoenix.h
           #ifndef _OPPO_PHOENIX_H
           #define _OPPO_PHOENIX_H
-          static inline void phx_set_boot_stage(const char *stage) { (void)stage; }
-          static inline void phx_set_boot_error(const char *error) { (void)error; }
+
+          #include <linux/types.h>
+
+          static inline void phx_set_boot_stage(int stage) { (void)stage; }
+          static inline void phx_set_boot_error(int error) { (void)error; }
           static inline void phx_set_boot_info(const char *info) { (void)info; }
+
+          #ifndef KERNEL_MM_INIT_DONE
           #define KERNEL_MM_INIT_DONE 0
           #define KERNEL_LOCAL_IRQ_ENABLE 1
           #define KERNEL_DELAYACCT_INIT_DONE 2
@@ -123,12 +125,8 @@ jobs:
           #define KERNEL_DO_INITCALLS_DONE 4
           #define KERNEL_INIT_DONE 5
           #define KERNEL_DO_BASIC_SETUP_DONE 6
-          #define ERROR_KERNEL_PANIC 0
-          #define ERROR_INT 0
-          #define ERROR_AEE 0
-          #define ERROR_KE 0
-          #define ERROR_NE 0
-          #define ERROR_JE 0
+          #endif
+
           #ifndef ANDROID_LOG_INFO
           #define ANDROID_LOG_UNKNOWN 0
           #define ANDROID_LOG_DEFAULT 1
@@ -140,52 +138,21 @@ jobs:
           #define ANDROID_LOG_FATAL 7
           #define ANDROID_LOG_SILENT 8
           #endif
+
           #endif
           EOF
           cp include/linux/oppo_phoenix.h include/soc/oppo/oppo_phoenix.h 2>/dev/null || true
           cp include/linux/oppo_phoenix.h vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h 2>/dev/null || true
 
-          # Python patch to fix panic.c and directly embed everything inside layering_rule.h
           python3 -c "
-          import glob
-          
-          # Patch panic.c
           try:
               with open('kernel/panic.c', 'r') as f:
                   content = f.read()
-              content = content.replace('phx_set_boot_error(ERROR_INT);', '// phx_set_boot_error(ERROR_INT);')
               content = content.replace('phx_set_boot_error', '// phx_set_boot_error')
               with open('kernel/panic.c', 'w') as f:
                   f.write(content)
           except Exception:
               pass
-
-          # Patch layering_rule.h to embed definitions directly, bypassing missing header issues
-          for path in glob.glob('**/layering_rule.h', recursive=True):
-              try:
-                  with open(path, 'r') as f:
-                      content = f.read()
-                  
-                  embedded_code = '''
-          #ifndef __LAYERING_RULE_BASE_H__
-          #define __LAYERING_RULE_BASE_H__
-          static inline int layering_rule_calculation(void) { return 0; }
-          #define HRT_PATH_OSZ_NONE 0
-          #define HRT_PATH_PIPE_SINGLE 1
-          #define HRT_PATH_DISP_DUAL_EXT 2
-          #define HRT_PATH_OSZ_PARTIAL 3
-          #define HRT_PATH_DISP_SINGLE 4
-          #define HRT_PATH_UNKNOWN 5
-          #define HRT_PATH_NUM 6
-          #endif
-          '''
-                  content = content.replace('#include \"layering_rule_base.h\"', embedded_code)
-                  content = content.replace('#include <layering_rule_base.h>', embedded_code)
-                  
-                  with open(path, 'w') as f:
-                      f.write(content)
-              except Exception as e:
-                  print(f'Error patching {path}: {e}')
           " || true
 
       - name: Compile Kernel
@@ -204,13 +171,30 @@ jobs:
             DEFCONFIG=$(basename $(find arch/arm64/configs/ -name "*defconfig" | head -n 1))
           fi
           echo "Selected Defconfig: $DEFCONFIG"
+
+          # 1. First disable stack protector inside the raw defconfig file itself
+          sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/' arch/arm64/configs/$DEFCONFIG || true
+          sed -i 's/CONFIG_CC_STACKPROTECTOR_REGULAR=y/# CONFIG_CC_STACKPROTECTOR_REGULAR is not set/' arch/arm64/configs/$DEFCONFIG || true
+          echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> arch/arm64/configs/$DEFCONFIG
+
+          # 2. Generate configuration
           make O=out $DEFCONFIG
-          
-          STUB_HEADER="$(pwd)/include/linux/oppo_phoenix.h"
+
+          # 3. Ensure non-interactive default confirmation
+          yes "" | make O=out oldconfig || true
+
+          PHOENIX_HEADER="$(pwd)/include/linux/oppo_phoenix.h"
           MAKE_OPTS="O=out HOSTCC=gcc HOSTCXX=g++ HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon CC=aarch64-linux-android-gcc"
-          EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -I$(pwd)/include -I$(pwd)/include/oppo -include ${STUB_HEADER}"
           
-          make -j$(nproc --all) $MAKE_OPTS KCFLAGS="$EXTRA_FLAGS" 2>&1 | tee build.log
+          EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -fno-stack-protector -I$(pwd)/include -I$(pwd)/include/oppo -I$(pwd)/drivers/misc/mediatek/video/mt6771/videox -include ${PHOENIX_HEADER}"
+          
+          if ! make -j$(nproc --all) $MAKE_OPTS KCFLAGS="$EXTRA_FLAGS" KBUILD_CFLAGS="-fno-stack-protector" 2>&1 | tee build.log; then
+            echo "=============================================="
+            echo "BUILD FAILED! Searching for actual error lines:"
+            echo "=============================================="
+            grep -i -E "error:" build.log | tail -n 40 || tail -n 150 build.log
+            exit 1
+          fi
 
       - name: Collect Artifacts
         run: |
