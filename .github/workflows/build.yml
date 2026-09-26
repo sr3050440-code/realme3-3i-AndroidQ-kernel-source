@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Fix Display & Charger)
+name: Build Realme 3i Custom Kernel (Fix Panic Macros)
 
 on:
   workflow_dispatch:
@@ -144,6 +144,18 @@ jobs:
           #define _OPPO_PHOENIX_H
 
           #include <linux/types.h>
+
+          #ifndef ERROR_KERNEL_PANIC
+          #define ERROR_KERNEL_PANIC 0
+          #endif
+
+          #ifndef ERROR_HNT
+          #define ERROR_HNT 0
+          #endif
+
+          #ifndef ERROR_HINT
+          #define ERROR_HINT 0
+          #endif
 
           static inline void phx_set_boot_stage(int stage) { (void)stage; }
           static inline void phx_set_boot_error(int error) { (void)error; }
