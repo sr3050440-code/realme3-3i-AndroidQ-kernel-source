@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Fix Panic Macros)
+name: Build Realme 3i Custom Kernel (Fix ERROR_HNT)
 
 on:
   workflow_dispatch:
@@ -51,7 +51,6 @@ jobs:
           #define HRT_OFF_LEVEL_LEVEL1 1
           #define HRT_OFF_LEVEL_LEVEL2 2
           #define HRT_OFF_LEVEL_LEVEL3 3
-          #define HRT_OFF_LEVEL_DEFAULT 0
           #define HRT_OPP_LEVEL_DEFAULT 0
           #define HRT_OPP_LEVEL_LEVEL1 1
           #define HRT_OPP_LEVEL_LEVEL2 2
@@ -157,9 +156,17 @@ jobs:
           #define ERROR_HINT 0
           #endif
 
-          static inline void phx_set_boot_stage(int stage) { (void)stage; }
-          static inline void phx_set_boot_error(int error) { (void)error; }
-          static inline void phx_set_boot_info(const char *info) { (void)info; }
+          #ifndef phx_set_boot_stage
+          #define phx_set_boot_stage(stage) do { } while(0)
+          #endif
+
+          #ifndef phx_set_boot_error
+          #define phx_set_boot_error(error) do { } while(0)
+          #endif
+
+          #ifndef phx_set_boot_info
+          #define phx_set_boot_info(info) do { } while(0)
+          #endif
 
           #ifndef KERNEL_MM_INIT_DONE
           #define KERNEL_MM_INIT_DONE 0
