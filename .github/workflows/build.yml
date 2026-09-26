@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Fixed & Verified)
+name: Build Realme 3i Custom Kernel (Fix Display & Charger)
 
 on:
   workflow_dispatch:
@@ -34,6 +34,38 @@ jobs:
           rm -rf drivers/input/oppo_fp_drivers || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
+
+          echo "Fixing HRT Defines for MediaTek Video..."
+          cat << 'EOF' > include/hrt_fix.h
+          #ifndef __HRT_FIX_H__
+          #define __HRT_FIX_H__
+
+          #ifndef HRT_LEVEL_NUM
+          #define HRT_LEVEL_NUM 4
+          #define HRT_LEVEL_LEVEL0 0
+          #define HRT_LEVEL_LEVEL1 1
+          #define HRT_LEVEL_LEVEL2 2
+          #define HRT_LEVEL_LEVEL3 3
+          #define HRT_LEVEL_DEFAULT 0
+          #define HRT_OFF_LEVEL_LEVEL0 0
+          #define HRT_OFF_LEVEL_LEVEL1 1
+          #define HRT_OFF_LEVEL_LEVEL2 2
+          #define HRT_OFF_LEVEL_LEVEL3 3
+          #define HRT_OFF_LEVEL_DEFAULT 0
+          #define HRT_OPP_LEVEL_DEFAULT 0
+          #define HRT_OPP_LEVEL_LEVEL1 1
+          #define HRT_OPP_LEVEL_LEVEL2 2
+          #define HRT_OPP_LEVEL_LEVEL3 3
+          #endif
+
+          enum opp_level {
+              HRT_OPP_LEVEL_0 = 0,
+              HRT_OPP_LEVEL_1,
+              HRT_OPP_LEVEL_2
+          };
+
+          #endif
+          EOF
 
           echo "Fixing layering rule code & headers..."
           find drivers/misc/mediatek/video/ -name "layering_rule*.c" | while read -r file; do
@@ -145,14 +177,17 @@ jobs:
           cp include/linux/oppo_phoenix.h vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h 2>/dev/null || true
 
           python3 -c "
-          try:
-              with open('kernel/panic.c', 'r') as f:
-                  content = f.read()
-              content = content.replace('phx_set_boot_error', '// phx_set_boot_error')
-              with open('kernel/panic.c', 'w') as f:
-                  f.write(content)
-          except Exception:
-              pass
+          import glob
+          for filepath in glob.glob('drivers/power/supply/mediatek/charger/*charger*.c'):
+              try:
+                  with open(filepath, 'r') as f:
+                      txt = f.read()
+                  txt = txt.replace('static int __init', 'int')
+                  txt = txt.replace('static void __exit', 'void')
+                  with open(filepath, 'w') as f:
+                      f.write(txt)
+              except Exception:
+                  pass
           " || true
 
       - name: Compile Kernel
@@ -172,7 +207,7 @@ jobs:
           fi
           echo "Selected Defconfig: $DEFCONFIG"
 
-          # 1. First disable stack protector inside the raw defconfig file itself
+          # 1. Disable stack protector inside defconfig
           sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/' arch/arm64/configs/$DEFCONFIG || true
           sed -i 's/CONFIG_CC_STACKPROTECTOR_REGULAR=y/# CONFIG_CC_STACKPROTECTOR_REGULAR is not set/' arch/arm64/configs/$DEFCONFIG || true
           echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> arch/arm64/configs/$DEFCONFIG
@@ -180,13 +215,14 @@ jobs:
           # 2. Generate configuration
           make O=out $DEFCONFIG
 
-          # 3. Ensure non-interactive default confirmation
+          # 3. Non-interactive config sync
           yes "" | make O=out oldconfig || true
 
           PHOENIX_HEADER="$(pwd)/include/linux/oppo_phoenix.h"
+          HRT_HEADER="$(pwd)/include/hrt_fix.h"
           MAKE_OPTS="O=out HOSTCC=gcc HOSTCXX=g++ HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon CC=aarch64-linux-android-gcc"
           
-          EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -fno-stack-protector -I$(pwd)/include -I$(pwd)/include/oppo -I$(pwd)/drivers/misc/mediatek/video/mt6771/videox -include ${PHOENIX_HEADER}"
+          EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -fno-stack-protector -I$(pwd)/include -I$(pwd)/include/oppo -I$(pwd)/drivers/misc/mediatek/video/mt6771/videox -include ${PHOENIX_HEADER} -include ${HRT_HEADER}"
           
           if ! make -j$(nproc --all) $MAKE_OPTS KCFLAGS="$EXTRA_FLAGS" KBUILD_CFLAGS="-fno-stack-protector" 2>&1 | tee build.log; then
             echo "=============================================="
