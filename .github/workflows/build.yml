@@ -187,9 +187,9 @@ jobs:
           HRT_HEADER="$(pwd)/include/hrt_fix.h"
           MAKE_OPTS="O=out HOSTCC=gcc HOSTCXX=g++ HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon CC=aarch64-linux-android-gcc"
           
-          EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -fno-stack-protector -I$(pwd)/include -I$(pwd)/include/oppo -I$(pwd)/drivers/misc/mediatek/video/common/layering_rule_base/v1 -I$(pwd)/drivers/misc/mediatek/video/mt6771/videox -include ${PHOENIX_HEADER} -include ${HRT_HEADER}"
+          EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -fno-stack-protector -DERROR_HNT=0 -DERROR_HINT=0 -I$(pwd)/include -I$(pwd)/include/oppo -I$(pwd)/drivers/misc/mediatek/video/common/layering_rule_base/v1 -I$(pwd)/drivers/misc/mediatek/video/mt6771/videox -include ${PHOENIX_HEADER} -include ${HRT_HEADER}"
           
-          if ! make -j$(nproc --all) $MAKE_OPTS KCFLAGS="$EXTRA_FLAGS" KBUILD_CFLAGS="-fno-stack-protector" 2>&1 | tee build.log; then
+          if ! make -j$(nproc --all) $MAKE_OPTS KCFLAGS="$EXTRA_FLAGS" KBUILD_CFLAGS="-fno-stack-protector -DERROR_HNT=0 -DERROR_HINT=0" 2>&1 | tee build.log; then
             echo "=============================================="
             echo "BUILD FAILED! Searching for actual error lines:"
             echo "=============================================="
