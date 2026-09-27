@@ -1,4 +1,4 @@
-name: Build Realme 3i Android Q Kernel
+name: Realme 3i Android Q Kernel
 
 on:
   workflow_dispatch:
@@ -8,110 +8,184 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        shell: bash
         run: |
           sudo apt-get update
+
           sudo apt-get install -y \
-            build-essential bc bison flex \
-            libssl-dev libelf-dev \
-            libncurses5-dev libncurses-dev \
-            clang lld \
+            build-essential \
+            bc \
+            bison \
+            flex \
+            libssl-dev \
+            libelf-dev \
+            libncurses5-dev \
+            libncurses-dev \
+            python2 \
+            python2.7 \
+            zip \
+            unzip \
+            cpio \
+            device-tree-compiler \
             gcc-aarch64-linux-gnu \
             gcc-arm-linux-gnueabi \
-            python2 python2.7 \
-            zip unzip
+            clang \
+            lld
 
           sudo ln -sf /usr/bin/python2.7 /usr/bin/python2
 
+          echo "===== Python ====="
           python2 --version
-          clang --version
+
+          echo "===== GCC ====="
           aarch64-linux-gnu-gcc --version
 
-      - name: Prepare source
+          echo "===== Clang ====="
+          clang --version
+
+      - name: Prepare old MediaTek Python tools
+        shell: bash
         run: |
           git config --global core.autocrlf false
 
-          if [ -f tools/dct/DrvGen.py ]; then
-            sed -i 's/\r$//' tools/dct/DrvGen.py
-            chmod +x tools/dct/DrvGen.py
-          fi
+          find tools/dct -type f \
+            \( -name "*.py" -o -name "*.sh" \) \
+            -print0 | xargs -0 -r sed -i 's/\r$//'
 
-      - name: Configure
+          chmod +x tools/dct/DrvGen.py
+
+          echo "===== DrvGen check ====="
+          head -n 3 tools/dct/DrvGen.py
+
+      - name: Check required source files
+        shell: bash
+        run: |
+          test -f arch/arm64/configs/oppo6771_defconfig
+          test -f tools/dct/DrvGen.py
+          test -f arch/arm64/boot/Makefile
+          test -f arch/arm64/Makefile
+
+          echo "Required source files OK."
+
+      - name: Configure kernel
         shell: bash
         run: |
           export ARCH=arm64
           export SUBARCH=arm64
+
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
-          export PYTHON=python2.7
 
-          make O=out oppo6771_defconfig
-          make O=out olddefconfig
+          export PYTHON=python2
 
-          echo "===== CONFIG ====="
+          make O=out \
+            ARCH=arm64 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            oppo6771_defconfig
+
+          make O=out \
+            ARCH=arm64 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            olddefconfig
+
+          echo
+          echo "===== IMPORTANT CONFIG ====="
+
           grep -E \
-            'CONFIG_MACH_MT6771|CONFIG_MTK_PLATFORM|CONFIG_ARCH_MTK_PROJECT|CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE|CONFIG_BUILD_ARM64_DTB_OVERLAY_IMAGE' \
-            out/.config
+            'CONFIG_MACH_MT6771|CONFIG_MTK_PLATFORM|CONFIG_ARCH_MTK_PROJECT|CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE|CONFIG_BUILD_ARM64_DTB_OVERLAY_IMAGE|CONFIG_DEBUG_INFO' \
+            out/.config || true
 
-      - name: Build kernel
+      - name: Build kernel and DTB
         shell: bash
         run: |
           export ARCH=arm64
           export SUBARCH=arm64
+
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
-          export PYTHON=python2.7
-          export PATH="/usr/lib/llvm-14/bin:$PATH"
+
+          export PYTHON=python2
+
+          echo "======================================"
+          echo " Building Realme 3/3i MT6771 Kernel"
+          echo "======================================"
 
           make -j"$(nproc)" \
             O=out \
-            CC=clang \
-            HOSTCC=clang \
-            HOSTCXX=clang++ \
-            PYTHON=python2.7 \
+            ARCH=arm64 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            Image.gz-dtb \
+            dtbs \
             2>&1 | tee build.log
 
-      - name: Verify output
+      - name: Verify kernel output
+        shell: bash
         run: |
-          echo "===== KERNEL OUTPUT ====="
-          find out/arch/arm64/boot -maxdepth 2 -type f \
-            \( -name 'Image*' -o -name '*.dtb' \) \
-            -printf '%p %s bytes\n'
+          echo
+          echo "===== BOOT OUTPUT ====="
+
+          find out/arch/arm64/boot \
+            -maxdepth 1 \
+            -type f \
+            -printf '%f  %s bytes\n' \
+            | sort
+
+          echo
+          echo "===== DTB OUTPUT ====="
+
+          find out/arch/arm64/boot/dts \
+            -type f \
+            -name "*.dtb" \
+            -printf '%p  %s bytes\n' \
+            | sort
 
           test -f out/arch/arm64/boot/Image
+          test -f out/arch/arm64/boot/Image.gz
 
-      - name: Collect artifacts
+          if [ -f out/arch/arm64/boot/Image.gz-dtb ]; then
+            echo "Image.gz-dtb found."
+          else
+            echo "ERROR: Image.gz-dtb was not generated."
+            exit 1
+          fi
+
+      - name: Collect kernel files
+        shell: bash
         run: |
           mkdir -p kernel-output
 
-          cp out/arch/arm64/boot/Image kernel-output/
+          cp out/arch/arm64/boot/Image \
+             kernel-output/
 
-          for f in \
-            Image.gz \
-            Image.gz-dtb \
-            Image-dtb \
-            Image.lz4 \
-            Image.lzma \
-            Image.xz
-          do
-            if [ -f "out/arch/arm64/boot/$f" ]; then
-              cp "out/arch/arm64/boot/$f" kernel-output/
-            fi
-          done
+          cp out/arch/arm64/boot/Image.gz \
+             kernel-output/
+
+          cp out/arch/arm64/boot/Image.gz-dtb \
+             kernel-output/
 
           find out/arch/arm64/boot/dts \
-            -type f -name 'mt6771*.dtb' \
-            -exec cp {} kernel-output/ \; 2>/dev/null || true
+            -type f \
+            -name "*.dtb" \
+            -exec cp {} kernel-output/ \;
 
           cp build.log kernel-output/
 
-          echo "===== FINAL FILES ====="
+          echo
+          echo "===== ARTIFACT FILES ====="
           ls -lh kernel-output
 
-      - name: Package
+      - name: Create ZIP
+        shell: bash
         run: |
           cd kernel-output
           zip -9 ../Realme3i-Kernel.zip *
@@ -119,7 +193,7 @@ jobs:
 
           ls -lh Realme3i-Kernel.zip
 
-      - name: Upload
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: Realme3i-Kernel
