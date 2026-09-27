@@ -1,7 +1,10 @@
-name: Build Realme 3i MT6771 Kernel
+name: Realme 3i MT6771 Android Q Kernel
 
 on:
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -10,10 +13,6 @@ jobs:
     env:
       ARCH: arm64
       SUBARCH: arm64
-      CROSS_COMPILE: aarch64-linux-gnu-
-      CROSS_COMPILE_ARM32: arm-linux-gnueabi-
-      KBUILD_BUILD_USER: github
-      KBUILD_BUILD_HOST: actions
       TZ: Asia/Kolkata
 
     steps:
@@ -22,7 +21,7 @@ jobs:
       # CHECKOUT
       # ============================================================
 
-      - name: Checkout Kernel Source
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
@@ -46,55 +45,49 @@ jobs:
             bison \
             flex \
             libssl-dev \
+            libelf-dev \
             libncurses5-dev \
             libncurses-dev \
-            libelf-dev \
-            libdw-dev \
             dwarves \
             cpio \
             rsync \
+            device-tree-compiler \
             zip \
             unzip \
-            file \
-            xz-utils \
             gzip \
-            bzip2 \
-            tar \
+            xz-utils \
+            file \
             wget \
             curl \
             git \
             patch \
             perl \
-            sed \
-            awk \
-            python3 \
-            device-tree-compiler \
+            python2.7 \
             gcc-aarch64-linux-gnu \
-            g++-aarch64-linux-gnu \
             gcc-arm-linux-gnueabi \
-            g++-arm-linux-gnueabi \
-            clang \
-            lld \
-            llvm \
-            llvm-dev
+            binutils-aarch64-linux-gnu \
+            binutils-arm-linux-gnueabi
+
+          # Ubuntu 22.04 does not normally provide a "python2"
+          # executable package, so create our own aliases.
+          sudo ln -sf /usr/bin/python2.7 /usr/local/bin/python2
+          sudo ln -sf /usr/bin/python2.7 /usr/local/bin/python
 
           echo "=========================================="
           echo "DEPENDENCIES"
           echo "=========================================="
 
-          gcc --version
-          clang --version
-          ld.lld --version
+          python2 --version
           aarch64-linux-gnu-gcc --version
           arm-linux-gnueabi-gcc --version
-          python3 --version
+          dtc --version
 
 
       # ============================================================
-      # SOURCE CLEANUP
+      # SOURCE PREPARATION
       # ============================================================
 
-      - name: Prepare Kernel Source
+      - name: Prepare Source
         shell: bash
         run: |
           set -eux
@@ -102,15 +95,13 @@ jobs:
           git config --global core.autocrlf false
 
           echo "=========================================="
-          echo "CHECKING KERNEL SOURCE"
+          echo "SOURCE CHECK"
           echo "=========================================="
 
-          test -d arch
-          test -d kernel
-          test -d scripts
           test -f Makefile
+          test -f arch/arm64/configs/oppo6771_defconfig
 
-          echo "Kernel source found."
+          echo "Kernel source OK."
 
           echo ""
           echo "=========================================="
@@ -133,91 +124,92 @@ jobs:
             -exec sed -i 's/\r$//' {} \; \
             2>/dev/null || true
 
-          echo "CRLF cleanup completed."
+          echo "CRLF cleanup complete."
 
 
       # ============================================================
-      # CHECK MT6771 / OPPO SOURCE
+      # CHECK REQUIRED MTK FILES
       # ============================================================
 
-      - name: Check MT6771 Source
+      - name: Check MT6771 Files
         shell: bash
         run: |
           set -e
 
           echo "=========================================="
-          echo "MT6771 SOURCE CHECK"
+          echo "MT6771 FILE CHECK"
           echo "=========================================="
 
           echo ""
           echo "===== DEFCONFIG ====="
 
-          if [ -f arch/arm64/configs/oppo6771_defconfig ]; then
-            echo "FOUND:"
-            echo "arch/arm64/configs/oppo6771_defconfig"
-          else
-            echo "ERROR: oppo6771_defconfig not found."
+          test -f \
+            arch/arm64/configs/oppo6771_defconfig
 
-            echo ""
-            echo "Available MTK defconfigs:"
-            find arch/arm64/configs \
-              -type f \
-              | grep -Ei '6771|mtk|oppo|realme' \
-              | head -100 \
-              || true
+          echo "OK"
 
-            exit 1
-          fi
-
-          echo ""
-          echo "===== OPPO PHOENIX HEADER ====="
-
-          PHOENIX_HEADER="$(find . \
-            -type f \
-            -name "oppo_phoenix.h" \
-            -print \
-            | head -n 1 || true)"
-
-          if [ -n "$PHOENIX_HEADER" ]; then
-            echo "FOUND:"
-            echo "$PHOENIX_HEADER"
-          else
-            echo "WARNING:"
-            echo "oppo_phoenix.h was not found."
-            echo ""
-            echo "Searching Phoenix files..."
-
-            find . \
-              -type f \
-              \( \
-                -iname "*phoenix*" \
-                -o -iname "*oppo*" \
-              \) \
-              | head -200 \
-              || true
-          fi
 
           echo ""
           echo "===== DRVGEN ====="
 
           if [ -f tools/dct/DrvGen.py ]; then
-            echo "FOUND tools/dct/DrvGen.py"
+            echo "DrvGen.py found"
           else
-            echo "WARNING: tools/dct/DrvGen.py not found."
+            echo "WARNING: DrvGen.py not found"
           fi
-
-          echo ""
-          echo "===== DRVGEN MAKEFILE ====="
 
           if [ -f scripts/drvgen/drvgen.mk ]; then
-            echo "FOUND scripts/drvgen/drvgen.mk"
+            echo "drvgen.mk found"
           else
-            echo "WARNING: scripts/drvgen/drvgen.mk not found."
+            echo "WARNING: drvgen.mk not found"
           fi
+
+
+          echo ""
+          echo "===== DWS ====="
+
+          find drivers/misc/mediatek/dws \
+            -type f \
+            -name "*.dws" \
+            -print \
+            2>/dev/null \
+            | head -100 \
+            || true
+
+
+          echo ""
+          echo "===== PHOENIX SEARCH ====="
+
+          find . \
+            -type f \
+            \( \
+              -name "oppo_phoenix.h" \
+              -o -iname "*phoenix*.h" \
+            \) \
+            -print \
+            2>/dev/null \
+            | head -100 \
+            || true
+
+
+          echo ""
+          echo "===== PHOENIX REFERENCES ====="
+
+          grep -RFn \
+            "oppo_phoenix" \
+            arch \
+            drivers \
+            include \
+            kernel \
+            fs \
+            mm \
+            2>/dev/null \
+            | head -100 \
+            || true
 
 
       # ============================================================
-      # FIX OLD PYTHON SCRIPT
+      # DRVGEN PYTHON 2
       # ============================================================
 
       - name: Prepare DrvGen
@@ -228,21 +220,22 @@ jobs:
           if [ -f tools/dct/DrvGen.py ]; then
 
             echo "=========================================="
-            echo "PREPARING DRVGEN"
+            echo "DRVGEN"
             echo "=========================================="
 
-            chmod +x tools/dct/DrvGen.py || true
+            chmod +x tools/dct/DrvGen.py
 
             sed -i 's/\r$//' tools/dct/DrvGen.py
+
+            sed -i \
+              '1s|^#!.*|#!/usr/bin/env python2|' \
+              tools/dct/DrvGen.py
 
             head -n 5 tools/dct/DrvGen.py
 
             echo ""
-            echo "Python syntax check..."
-
-            python3 -m py_compile tools/dct/DrvGen.py \
-              2>/dev/null \
-              || true
+            echo "Python 2:"
+            python2 --version
 
           fi
 
@@ -251,54 +244,47 @@ jobs:
       # TOOLCHAIN
       # ============================================================
 
-      - name: Setup Toolchain
+      - name: Setup Cross Compiler
         shell: bash
         run: |
           set -eux
+
+          mkdir -p "$GITHUB_WORKSPACE/toolchain/bin"
+
+          for tool in /usr/bin/aarch64-linux-gnu-*; do
+            if [ -e "$tool" ]; then
+              ln -sf "$tool" \
+                "$GITHUB_WORKSPACE/toolchain/bin/"
+            fi
+          done
+
+          for tool in /usr/bin/arm-linux-gnueabi-*; do
+            if [ -e "$tool" ]; then
+              ln -sf "$tool" \
+                "$GITHUB_WORKSPACE/toolchain/bin/"
+            fi
+          done
+
+          echo "$GITHUB_WORKSPACE/toolchain/bin" >> "$GITHUB_PATH"
 
           echo "=========================================="
           echo "TOOLCHAIN"
           echo "=========================================="
 
-          mkdir -p "$GITHUB_WORKSPACE/toolchain/bin"
+          which aarch64-linux-gnu-gcc
+          which aarch64-linux-gnu-ld
+          which aarch64-linux-gnu-objdump
 
-          for x in /usr/bin/aarch64-linux-gnu-*; do
-            if [ -e "$x" ]; then
-              ln -sf "$x" \
-                "$GITHUB_WORKSPACE/toolchain/bin/"
-            fi
-          done
-
-          for x in /usr/bin/arm-linux-gnueabi-*; do
-            if [ -e "$x" ]; then
-              ln -sf "$x" \
-                "$GITHUB_WORKSPACE/toolchain/bin/"
-            fi
-          done
-
-          export PATH="$GITHUB_WORKSPACE/toolchain/bin:$PATH"
-
-          echo "PATH=$PATH" >> "$GITHUB_ENV"
+          which arm-linux-gnueabi-gcc
 
           echo ""
-          echo "===== AARCH64 GCC ====="
-          which aarch64-linux-gnu-gcc
           aarch64-linux-gnu-gcc --version
 
           echo ""
-          echo "===== ARM32 GCC ====="
-          which arm-linux-gnueabi-gcc
+          aarch64-linux-gnu-objdump --version
+
+          echo ""
           arm-linux-gnueabi-gcc --version
-
-          echo ""
-          echo "===== CLANG ====="
-          which clang
-          clang --version
-
-          echo ""
-          echo "===== LLD ====="
-          which ld.lld
-          ld.lld --version
 
 
       # ============================================================
@@ -310,20 +296,21 @@ jobs:
         run: |
           set -eux
 
-          export PATH="$GITHUB_WORKSPACE/toolchain/bin:$PATH"
-
           export ARCH=arm64
           export SUBARCH=arm64
 
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
+          export PYTHON=python2
+          export python=python2
+
           rm -rf out
 
           mkdir -p out
 
           echo "=========================================="
-          echo "CONFIGURING OPPO MT6771"
+          echo "CONFIGURE OPPO6771"
           echo "=========================================="
 
           make \
@@ -336,19 +323,55 @@ jobs:
           test -f out/.config
 
           echo ""
-          echo "===== DISABLE DEBUG INFO ====="
+          echo "===== CONFIG ====="
 
-          ./scripts/config \
-            --file out/.config \
-            --disable DEBUG_INFO \
-            --disable DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT \
-            --disable DEBUG_INFO_DWARF4 \
-            --disable DEBUG_INFO_DWARF5 \
-            --disable DEBUG_INFO_BTF \
-            2>/dev/null || true
+          grep -E \
+            'CONFIG_MACH_MT6771|CONFIG_MTK_PLATFORM|CONFIG_ARCH_MTK_PROJECT|CONFIG_CROSS_COMPILE|CONFIG_BUILD_ARM64' \
+            out/.config \
+            || true
 
-          echo ""
-          echo "===== FINAL CONFIG ====="
+
+      # ============================================================
+      # DISABLE DEBUG INFO
+      # ============================================================
+
+      - name: Fix Debug Configuration
+        shell: bash
+        run: |
+          set -e
+
+          echo "=========================================="
+          echo "DISABLE DEBUG INFO"
+          echo "=========================================="
+
+          if [ -x scripts/config ]; then
+
+            ./scripts/config \
+              --file out/.config \
+              --disable DEBUG_INFO \
+              --disable DEBUG_INFO_DWARF4 \
+              --disable DEBUG_INFO_DWARF5 \
+              --disable DEBUG_INFO_BTF \
+              2>/dev/null || true
+
+          else
+
+            sed -i \
+              '/^CONFIG_DEBUG_INFO=/d' \
+              out/.config
+
+            sed -i \
+              '/^CONFIG_DEBUG_INFO_DWARF/d' \
+              out/.config
+
+            sed -i \
+              '/^CONFIG_DEBUG_INFO_BTF=/d' \
+              out/.config
+
+            echo "# CONFIG_DEBUG_INFO is not set" \
+              >> out/.config
+
+          fi
 
           make \
             O=out \
@@ -358,21 +381,52 @@ jobs:
             olddefconfig
 
           echo ""
-          echo "===== MT6771 CONFIG ====="
-
-          grep -E \
-            'CONFIG_MACH_MT6771|CONFIG_MTK_PLATFORM|CONFIG_ARCH_MTK_PROJECT|CONFIG_ARCH_MEDIATEK|CONFIG_DEBUG_INFO' \
+          grep \
+            -E '^CONFIG_DEBUG_INFO|^# CONFIG_DEBUG_INFO' \
             out/.config \
             || true
 
-          echo ""
-          echo "CONFIGURATION COMPLETE."
 
-          test -f out/.config
+      # ============================================================
+      # VERIFY DT SOURCE
+      # ============================================================
+
+      - name: Check Device Tree
+        shell: bash
+        run: |
+          set -e
+
+          echo "=========================================="
+          echo "DEVICE TREE"
+          echo "=========================================="
+
+          echo ""
+          echo "===== MT6771 DTS ====="
+
+          find arch/arm64/boot/dts \
+            -type f \
+            \( \
+              -name "*6771*.dts" \
+              -o -name "*6771*.dtsi" \
+            \) \
+            -print \
+            2>/dev/null \
+            | head -100 \
+            || true
+
+          echo ""
+          echo "===== OPPO6771 ====="
+
+          find arch/arm64/boot/dts \
+            -type f \
+            -iname "*oppo6771*" \
+            -print \
+            2>/dev/null \
+            || true
 
 
       # ============================================================
-      # BUILD
+      # BUILD KERNEL
       # ============================================================
 
       - name: Build Kernel
@@ -380,81 +434,84 @@ jobs:
         run: |
           set -o pipefail
 
-          export PATH="$GITHUB_WORKSPACE/toolchain/bin:$PATH"
-
           export ARCH=arm64
           export SUBARCH=arm64
 
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
+          export PYTHON=python2
+          export python=python2
+
           echo "=========================================="
-          echo "REALME 3i MT6771 KERNEL BUILD"
+          echo "REALME 3i MT6771 KERNEL"
           echo "=========================================="
 
           echo ""
-          echo "Date:"
-          date
-
-          echo ""
-          echo "===== COMPILERS ====="
-
-          clang --version
-          aarch64-linux-gnu-gcc --version
-
-          echo ""
-          echo "===== CONFIG ====="
-
+          echo "Kernel:"
           grep -E \
-            'CONFIG_MACH_MT6771|CONFIG_MTK_PLATFORM|CONFIG_ARCH_MTK_PROJECT|CONFIG_ARCH_MEDIATEK|CONFIG_DEBUG_INFO' \
-            out/.config \
-            || true
+            '^VERSION|^PATCHLEVEL|^SUBLEVEL' \
+            Makefile \
+            | head -5
+
+          echo ""
+          echo "Compiler:"
+          aarch64-linux-gnu-gcc --version | head -1
 
           echo ""
           echo "=========================================="
-          echo "STARTING BUILD"
+          echo "BUILD START"
           echo "=========================================="
+
+          rm -f build.log
 
           make \
             -j"$(nproc)" \
             O=out \
             ARCH=arm64 \
-            CC=clang \
-            HOSTCC=clang \
-            HOSTCXX=clang++ \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            PYTHON=python2 \
+            python=python2 \
             HOSTCFLAGS="-fcommon" \
-            HOSTLDFLAGS="" \
             KCFLAGS="-Wno-error" \
             Image.gz \
             Image.gz-dtb \
             dtbs \
             2>&1 | tee build.log
 
-          BUILD_STATUS=${PIPESTATUS[0]}
+          status=${PIPESTATUS[0]}
 
           echo ""
           echo "=========================================="
 
-          if [ "$BUILD_STATUS" -ne 0 ]; then
-            echo "KERNEL BUILD FAILED"
+          if [ "$status" -ne 0 ]; then
+            echo "BUILD FAILED"
             echo "=========================================="
 
             echo ""
-            echo "===== LAST 150 BUILD LINES ====="
+            echo "===== FIRST ERRORS ====="
 
-            tail -150 build.log || true
+            grep -n \
+              -E 'error:|Error:|fatal error:|No such file|undefined reference' \
+              build.log \
+              | head -50 \
+              || true
 
-            exit "$BUILD_STATUS"
+            echo ""
+            echo "===== LAST 200 LINES ====="
+
+            tail -200 build.log
+
+            exit "$status"
           fi
 
-          echo "KERNEL BUILD SUCCESSFUL"
+          echo "BUILD SUCCESS"
           echo "=========================================="
 
 
       # ============================================================
-      # VERIFY
+      # VERIFY OUTPUT
       # ============================================================
 
       - name: Verify Kernel
@@ -462,37 +519,34 @@ jobs:
         run: |
           set -e
 
-          echo "=========================================="
-          echo "VERIFYING KERNEL"
-          echo "=========================================="
-
           BOOT="out/arch/arm64/boot"
+
+          echo "=========================================="
+          echo "VERIFY KERNEL"
+          echo "=========================================="
 
           test -d "$BOOT"
 
           echo ""
-          echo "===== BOOT DIRECTORY ====="
+          echo "===== BOOT ====="
 
           ls -lah "$BOOT"
 
           echo ""
-          echo "===== Image.gz ====="
+          echo "===== IMAGE ====="
 
           if [ ! -f "$BOOT/Image.gz" ]; then
-            echo "ERROR: Image.gz was not generated."
-
-            echo ""
-            echo "Searching output..."
+            echo "ERROR: Image.gz not found."
 
             find out \
               -type f \
               \( \
                 -name "Image" \
                 -o -name "Image.gz" \
-                -o -name "*dtb" \
+                -o -name "*.dtb" \
               \) \
               -print \
-              || true
+              | head -200
 
             exit 1
           fi
@@ -500,95 +554,107 @@ jobs:
           ls -lh "$BOOT/Image.gz"
 
           echo ""
-          echo "===== IMAGE.GZ FILE ====="
+          echo "===== FILE ====="
 
           file "$BOOT/Image.gz"
 
           echo ""
-          echo "===== IMAGE.GZ HEADER ====="
+          echo "===== HEADER ====="
 
           xxd -l 16 "$BOOT/Image.gz"
 
           echo ""
-          echo "===== GZIP TEST ====="
+          echo "===== GZIP ====="
 
           gzip -t "$BOOT/Image.gz"
 
-          echo "Image.gz gzip test: OK"
+          echo "Image.gz is valid."
+
 
           echo ""
           echo "===== DTB ====="
 
-          find "$BOOT" \
+          find "$BOOT/dts" \
             -type f \
             -name "*.dtb" \
             -exec ls -lh {} \; \
             2>/dev/null \
             || true
 
+
           echo ""
-          echo "===== Image.gz-dtb ====="
+          echo "===== IMAGE.GZ-DTB ====="
 
           if [ -f "$BOOT/Image.gz-dtb" ]; then
             ls -lh "$BOOT/Image.gz-dtb"
           else
-            echo "Image.gz-dtb not generated."
+            echo "Image.gz-dtb was not generated."
           fi
 
 
       # ============================================================
-      # COLLECT OUTPUT
+      # COLLECT
       # ============================================================
 
       - name: Collect Kernel
+        if: success()
         shell: bash
         run: |
           set -e
+
+          BOOT="out/arch/arm64/boot"
 
           rm -rf kernel-output
 
           mkdir -p kernel-output
 
-          BOOT="out/arch/arm64/boot"
-
-          echo "=========================================="
-          echo "COLLECTING KERNEL"
-          echo "=========================================="
-
-          cp "$BOOT/Image.gz" \
+          cp \
+            "$BOOT/Image.gz" \
             kernel-output/Image.gz
 
           if [ -f "$BOOT/Image.gz-dtb" ]; then
-            cp "$BOOT/Image.gz-dtb" \
+            cp \
+              "$BOOT/Image.gz-dtb" \
               kernel-output/Image.gz-dtb
           fi
 
           if [ -d "$BOOT/dts" ]; then
+
             mkdir -p kernel-output/dts
 
             find "$BOOT/dts" \
               -type f \
               -name "*.dtb" \
-              -exec cp --parents {} kernel-output/ \; \
+              -exec cp {} kernel-output/dts/ \; \
               2>/dev/null \
               || true
+
           fi
 
-          echo ""
-          echo "===== OUTPUT ====="
+          echo "=========================================="
+          echo "KERNEL OUTPUT"
+          echo "=========================================="
 
           find kernel-output \
             -type f \
             -exec ls -lh {} \;
 
-          echo ""
-          echo "===== CREATE ZIP ====="
+
+      # ============================================================
+      # ZIP
+      # ============================================================
+
+      - name: Create ZIP
+        if: success()
+        shell: bash
+        run: |
+          set -e
 
           cd kernel-output
 
           zip -r \
             ../Realme3i-MT6771-Kernel.zip \
-            ./
+            .
 
           cd ..
 
@@ -597,10 +663,25 @@ jobs:
 
 
       # ============================================================
-      # BUILD LOG
+      # UPLOAD KERNEL
       # ============================================================
 
-      - name: Prepare Build Logs
+      - name: Upload Kernel
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Realme3i-MT6771-Kernel
+          path: |
+            Realme3i-MT6771-Kernel.zip
+            kernel-output/
+          if-no-files-found: error
+
+
+      # ============================================================
+      # SAVE BUILD LOG
+      # ============================================================
+
+      - name: Save Build Logs
         if: always()
         shell: bash
         run: |
@@ -614,32 +695,15 @@ jobs:
             cp out/.config logs/kernel.config
           fi
 
-          echo "===== LOG FILES ====="
+          echo "===== LOG CONTENT ====="
 
-          find logs \
-            -type f \
-            -exec ls -lh {} \; \
-            || true
-
-
-      # ============================================================
-      # UPLOAD ARTIFACT
-      # ============================================================
-
-      - name: Upload Kernel
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Realme3i-MT6771-Kernel
-          path: |
-            Realme3i-MT6771-Kernel.zip
-            kernel-output/
-          if-no-files-found: error
-          compression-level: 9
+          if [ -f logs/build.log ]; then
+            tail -200 logs/build.log
+          fi
 
 
       # ============================================================
-      # UPLOAD BUILD LOG
+      # UPLOAD LOG
       # ============================================================
 
       - name: Upload Build Logs
