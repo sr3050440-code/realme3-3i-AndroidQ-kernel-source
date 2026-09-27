@@ -1,4 +1,4 @@
-name: Realme 3i Android Q Kernel
+name: Realme 3i Android Q Kernel last
 
 on:
   workflow_dispatch:
