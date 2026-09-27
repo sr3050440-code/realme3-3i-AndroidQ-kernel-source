@@ -1,4 +1,4 @@
-name: Build RMX1827 Kernel - Final Fixed
+name: Build Realme 3i MT6771 Kernel
 
 on:
   workflow_dispatch:
@@ -10,19 +10,22 @@ jobs:
     steps:
 
       # ============================================================
-      # 1. CHECKOUT
+      # CHECKOUT
       # ============================================================
-      - name: Checkout Source
+      - name: Checkout Kernel Source
         uses: actions/checkout@v4
 
 
       # ============================================================
-      # 2. INSTALL DEPENDENCIES
+      # DEPENDENCIES
       # ============================================================
       - name: Install Dependencies
+        shell: bash
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
+          set -e
+
           sudo apt-get update
 
           sudo apt-get install -y \
@@ -41,7 +44,9 @@ jobs:
             gcc-arm-linux-gnueabi \
             python2 \
             python2.7 \
-            device-tree-compiler
+            device-tree-compiler \
+            cpio \
+            rsync
 
           sudo ln -sf /usr/bin/python2.7 /usr/local/bin/python2
           sudo ln -sf /usr/bin/python2.7 /usr/local/bin/python
@@ -53,98 +58,122 @@ jobs:
           echo "===== CLANG ====="
           clang --version
 
-          echo "===== GCC AARCH64 ====="
+          echo "===== AARCH64 GCC ====="
           aarch64-linux-gnu-gcc --version
 
-          echo "===== GCC ARM32 ====="
+          echo "===== ARM32 GCC ====="
           arm-linux-gnueabi-gcc --version
 
 
       # ============================================================
-      # 3. PREPARE OLD KERNEL SOURCE
+      # PREPARE SOURCE
       # ============================================================
-      - name: Prepare Kernel Source
+      - name: Prepare Old Kernel Source
         shell: bash
         run: |
           set -e
 
           git config --global core.autocrlf false
 
-          echo "===== CHECK DRVGEN ====="
-          test -f tools/dct/DrvGen.py
+          echo "===== CHECK FILES ====="
 
-          # Remove Windows CRLF
-          sed -i 's/\r$//' tools/dct/DrvGen.py
+          test -f tools/dct/DrvGen.py
+          test -f scripts/drvgen/drvgen.mk
+          test -f arch/arm64/configs/oppo6771_defconfig
+
+          echo "Required files found."
+
+          # Remove CRLF from old source files
+          find tools scripts arch \
+            -type f \
+            \
+              -name "*.py" \
+              -o -name "*.mk" \
+              -o -name "Makefile" \
+              -o -name "Makefile.*" \
+            \
+            -exec sed -i 's/\r$//' {} \; \
+            2>/dev/null || true
 
           chmod +x tools/dct/DrvGen.py
 
-          # Force Python 2 shebang
+          # Force DrvGen to Python 2
           sed -i \
             '1s|^#!.*python.*|#!/usr/bin/env python2|' \
             tools/dct/DrvGen.py
 
-          echo "===== DRVGEN HEADER ====="
+          echo "===== DRVGEN ====="
           head -n 3 tools/dct/DrvGen.py
 
-          echo "===== ORIGINAL DRVGEN MAKEFILE ====="
-          grep -n "DRVGEN_TOOL\|\$(python)" \
-            scripts/drvgen/drvgen.mk || true
-
 
       # ============================================================
-      # 4. FORCE DRVGEN TO PYTHON 2
+      # FORCE DRVGEN PYTHON 2
       # ============================================================
-      - name: Fix DrvGen Python
+      - name: Fix DrvGen Python 2
         shell: bash
         run: |
           set -e
 
-          # Old kernel invokes DrvGen through $(python).
-          # Force it directly to Python 2.
+          echo "===== BEFORE PATCH ====="
+
+          grep -n \
+            "DRVGEN_TOOL\|\$(python)" \
+            scripts/drvgen/drvgen.mk \
+            || true
+
+          # Old kernel invokes:
+          # $(python) $(DRVGEN_TOOL)
+          #
+          # Force Python 2 directly.
 
           sed -i \
             's/$(python) $(DRVGEN_TOOL)/python2 $(DRVGEN_TOOL)/g' \
             scripts/drvgen/drvgen.mk
 
-          echo "===== PATCHED DRVGEN MAKEFILE ====="
+          echo "===== AFTER PATCH ====="
 
-          grep -n "DrvGen.py" \
-            scripts/drvgen/drvgen.mk || true
+          grep -n \
+            "DrvGen.py\|\$(python)" \
+            scripts/drvgen/drvgen.mk \
+            || true
 
 
       # ============================================================
-      # 5. CROSS COMPILER SETUP
+      # CROSS COMPILER
       # ============================================================
       - name: Setup Cross Compilers
         shell: bash
         run: |
           set -e
 
-          mkdir -p gcc64/bin
-          mkdir -p gcc32/bin
+          mkdir -p "$GITHUB_WORKSPACE/gcc64/bin"
+          mkdir -p "$GITHUB_WORKSPACE/gcc32/bin"
 
           for x in /usr/bin/aarch64-linux-gnu-*; do
-            [ -e "$x" ] && ln -sf "$x" gcc64/bin/
+            [ -e "$x" ] && \
+              ln -sf "$x" \
+              "$GITHUB_WORKSPACE/gcc64/bin/"
           done
 
           for x in /usr/bin/arm-linux-gnueabi-*; do
-            [ -e "$x" ] && ln -sf "$x" gcc32/bin/
+            [ -e "$x" ] && \
+              ln -sf "$x" \
+              "$GITHUB_WORKSPACE/gcc32/bin/"
           done
 
           export PATH="$GITHUB_WORKSPACE/gcc64/bin:$GITHUB_WORKSPACE/gcc32/bin:$PATH"
 
-          echo "===== TOOLS ====="
+          echo "===== TOOL PATHS ====="
 
           which aarch64-linux-gnu-gcc
           which aarch64-linux-gnu-objdump
-
           which arm-linux-gnueabi-gcc
           which clang
 
           echo "===== AARCH64 GCC ====="
           aarch64-linux-gnu-gcc --version
 
-          echo "===== AARCH64 OBJDUMP ====="
+          echo "===== OBJDUMP ====="
           aarch64-linux-gnu-objdump --version
 
           echo "===== CLANG ====="
@@ -152,9 +181,9 @@ jobs:
 
 
       # ============================================================
-      # 6. CONFIGURE OPPO6771
+      # CONFIGURE KERNEL
       # ============================================================
-      - name: Configure Kernel
+      - name: Configure Oppo6771 Kernel
         shell: bash
         run: |
           set -e
@@ -173,7 +202,7 @@ jobs:
           rm -rf out
 
           echo "=========================================="
-          echo "       OPPO6771 KERNEL CONFIG"
+          echo "       CONFIGURING OPPO6771"
           echo "=========================================="
 
           make \
@@ -188,16 +217,31 @@ jobs:
 
           # --------------------------------------------------------
           # Disable debug information.
-          # Old kernel + modern binutils can produce
-          # "Unrecognized form: 0x22/0x23" DWARF errors.
+          #
+          # Required because this old kernel's DWARF/debug data
+          # can trigger modern objdump:
+          #
+          # "Unrecognized form: 0x22"
+          # "Unrecognized form: 0x23"
           # --------------------------------------------------------
 
-          sed -i '/^CONFIG_DEBUG_INFO=/d' out/.config
-          sed -i '/^CONFIG_DEBUG_INFO_DWARF/d' out/.config
-          sed -i '/^CONFIG_DEBUG_INFO_BTF=/d' out/.config
+          sed -i \
+            '/^CONFIG_DEBUG_INFO=/d' \
+            out/.config
 
-          echo '# CONFIG_DEBUG_INFO is not set' >> out/.config
-          echo '# CONFIG_DEBUG_INFO_BTF is not set' >> out/.config
+          sed -i \
+            '/^CONFIG_DEBUG_INFO_DWARF/d' \
+            out/.config
+
+          sed -i \
+            '/^CONFIG_DEBUG_INFO_BTF=/d' \
+            out/.config
+
+          echo '# CONFIG_DEBUG_INFO is not set' \
+            >> out/.config
+
+          echo '# CONFIG_DEBUG_INFO_BTF is not set' \
+            >> out/.config
 
           make \
             O=out \
@@ -205,15 +249,205 @@ jobs:
             olddefconfig
 
           echo ""
-          echo "===== DEBUG CONFIG ====="
+          echo "===== IMPORTANT CONFIG ====="
 
           grep -E \
-            'CONFIG_DEBUG_INFO|CONFIG_DEBUG_INFO_DWARF|CONFIG_DEBUG_INFO_BTF' \
-            out/.config || true
+            'CONFIG_MACH_MT6771|CONFIG_MTK_PLATFORM|CONFIG_ARCH_MTK_PROJECT|CONFIG_DEBUG_INFO' \
+            out/.config \
+            || true
 
           echo ""
-          echo "===== MT6771 CONFIG ====="
+
+          test -f out/.config
+
+
+      # ============================================================
+      # BUILD KERNEL
+      # ============================================================
+      - name: Compile Kernel
+        shell: bash
+        run: |
+          set -o pipefail
+
+          export ARCH=arm64
+          export SUBARCH=arm64
+
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+
+          export PATH="$GITHUB_WORKSPACE/gcc64/bin:$GITHUB_WORKSPACE/gcc32/bin:$PATH"
+
+          export PYTHON=python2
+          export python=python2
+
+          echo "=========================================="
+          echo "       REALME 3i MT6771 KERNEL"
+          echo "=========================================="
+
+          echo ""
+          echo "Build started:"
+          date
+
+          echo ""
+          echo "===== PYTHON ====="
+          python2 --version
+
+          echo ""
+          echo "===== COMPILER ====="
+          clang --version
+
+          echo ""
+          echo "===== CONFIG ====="
 
           grep -E \
-            'CONFIG_MACH_MT6771|CONFIG_MTK_PLATFORM|CONFIG_ARCH_MTK_PROJECT' \
-            out/.config || true
+            'CONFIG_MACH_MT6771|CONFIG_MTK_PLATFORM|CONFIG_ARCH_MTK_PROJECT|CONFIG_DEBUG_INFO' \
+            out/.config \
+            || true
+
+          echo ""
+          echo "=========================================="
+          echo "          STARTING KERNEL COMPILE"
+          echo "=========================================="
+
+          make \
+            -j"$(nproc)" \
+            O=out \
+            ARCH=arm64 \
+            CC=clang \
+            HOSTCC=clang \
+            HOSTCXX=clang++ \
+            HOSTCFLAGS="-fcommon" \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            PYTHON=python2 \
+            python=python2 \
+            KCFI=0 \
+            Image.gz \
+            Image.gz-dtb \
+            dtbs \
+            2>&1 | tee build.log
+
+          echo ""
+          echo "=========================================="
+          echo "       KERNEL COMPILE FINISHED"
+          echo "=========================================="
+
+          date
+
+
+      # ============================================================
+      # VERIFY BUILD
+      # ============================================================
+      - name: Verify Kernel
+        shell: bash
+        run: |
+          set -e
+
+          echo "=========================================="
+          echo "          VERIFYING OUTPUT"
+          echo "=========================================="
+
+          echo ""
+          echo "===== BOOT DIRECTORY ====="
+
+          ls -lah \
+            out/arch/arm64/boot/
+
+          echo ""
+          echo "===== Image.gz ====="
+
+          test -f \
+            out/arch/arm64/boot/Image.gz
+
+          ls -lh \
+            out/arch/arm64/boot/Image.gz
+
+          echo ""
+          echo "===== Image.gz-dtb ====="
+
+          if [ -f out/arch/arm64/boot/Image.gz-dtb ]; then
+            ls -lh \
+              out/arch/arm64/boot/Image.gz-dtb
+          else
+            echo "WARNING: Image.gz-dtb was not generated."
+          fi
+
+          echo ""
+          echo "===== DTB FILES ====="
+
+          find \
+            out/arch/arm64/boot/dts \
+            -type f \
+            -name "*.dtb" \
+            -exec ls -lh {} \; \
+            2>/dev/null \
+            || true
+
+
+      # ============================================================
+      # VERIFY GZIP
+      # ============================================================
+      - name: Verify Image.gz
+        shell: bash
+        run: |
+          set -e
+
+          echo "===== FILE ====="
+
+          file \
+            out/arch/arm64/boot/Image.gz
+
+          echo ""
+          echo "===== HEADER ====="
+
+          xxd -l 16 \
+            out/arch/arm64/boot/Image.gz
+
+          python3 - <<'PY'
+          path = "out/arch/arm64/boot/Image.gz"
+
+          with open(path, "rb") as f:
+              header = f.read(2)
+
+          print("Header:", header.hex())
+
+          if header != b"\x1f\x8b":
+              raise SystemExit(
+                  "ERROR: Image.gz is not gzip"
+              )
+
+          print("OK: Image.gz is valid gzip")
+          PY
+
+
+      # ============================================================
+      # COLLECT KERNEL
+      # ============================================================
+      - name: Collect Kernel Files
+        shell: bash
+        run: |
+          set -e
+
+          rm -rf kernel-output
+
+          mkdir -p kernel-output
+
+          echo "===== COPYING Image.gz ====="
+
+          cp \
+            out/arch/arm64/boot/Image.gz \
+            kernel-output/
+
+          echo "===== COPYING Image.gz-dtb ====="
+
+          if [ -f out/arch/arm64/boot/Image.gz-dtb ]; then
+            cp \
+              out/arch/arm64/boot/Image.gz-dtb \
+              kernel-output/
+          fi
+
+          echo "===== COPYING DTB FILES ====="
+
+          find \
+            out/arch/arm64/boot/dts \
+           
