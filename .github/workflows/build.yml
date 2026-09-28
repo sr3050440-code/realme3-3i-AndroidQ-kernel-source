@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
+
       - name: Checkout kernel source
         uses: actions/checkout@v4
         with:
@@ -20,93 +21,197 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            git bc bison flex build-essential \
-            libssl-dev libelf-dev
+            git \
+            bc \
+            bison \
+            flex \
+            build-essential \
+            libssl-dev \
+            libelf-dev
 
-      - name: Show current kernel version
+      - name: Show current version
         run: |
-          echo "Current kernel version:"
+          echo "Current Makefile version:"
           grep -E '^(VERSION|PATCHLEVEL|SUBLEVEL|EXTRAVERSION)' Makefile || true
 
-      - name: Fetch Linux stable 4.14
+          echo
+          echo "Current commit:"
+          git log -1 --oneline
+
+      - name: Fetch Linux 4.14.141
         run: |
+          set -e
+
+          git remote remove linux-stable 2>/dev/null || true
+
           git remote add linux-stable \
             https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
 
           git fetch linux-stable \
-            refs/tags/v4.14.141 \
+            refs/tags/v4.14.141
+
+          echo "4.14.141 fetched"
+
+      - name: Fetch Linux 4.14.186
+        run: |
+          set -e
+
+          git fetch linux-stable \
             refs/tags/v4.14.186
+
+          echo "4.14.186 fetched"
+
+      - name: Resolve Linux stable commits
+        run: |
+          set -e
+
+          BASE=$(git rev-parse FETCH_HEAD)
+
+          echo "Checking Linux stable references..."
+
+          git fetch linux-stable \
+            refs/tags/v4.14.141:refs/remotes/linux-stable/v4.14.141
+
+          git fetch linux-stable \
+            refs/tags/v4.14.186:refs/remotes/linux-stable/v4.14.186
+
+          BASE=$(git rev-parse refs/remotes/linux-stable/v4.14.141)
+          TARGET=$(git rev-parse refs/remotes/linux-stable/v4.14.186)
+
+          echo "BASE   = $BASE"
+          echo "TARGET = $TARGET"
+
+          echo "BASE_COMMIT=$BASE" >> "$GITHUB_ENV"
+          echo "TARGET_COMMIT=$TARGET" >> "$GITHUB_ENV"
 
       - name: Create upgrade branch
         run: |
           git checkout -b kernel-4.14.186
 
-      - name: Check upstream base
+      - name: Generate stable patch
         run: |
-          if git merge-base --is-ancestor v4.14.141 HEAD; then
-            echo "UPSTREAM_BASE=true" >> "$GITHUB_ENV"
-            echo "Upstream 4.14.141 base found."
-          else
-            echo "UPSTREAM_BASE=false" >> "$GITHUB_ENV"
-            echo "Vendor kernel tree detected."
-          fi
+          set -e
 
-      - name: Upgrade kernel
-        run: |
-          if [ "$UPSTREAM_BASE" = "true" ]; then
+          echo "Generating Linux 4.14.141 -> 4.14.186 patch..."
 
-            echo "Merging Linux 4.14.186..."
-            git merge v4.14.186 \
-              --no-commit \
-              --no-ff || true
-
-          else
-
-            echo "Creating stable upgrade patch..."
-
-            git diff --binary \
-              v4.14.141..v4.14.186 \
-              > stable-4.14.141-to-4.14.186.patch
-
-            echo "Applying stable patch..."
-
-            git apply \
-              --3way \
-              --whitespace=fix \
-              stable-4.14.141-to-4.14.186.patch || true
-
-          fi
-
-      - name: Set kernel version
-        run: |
-          sed -i 's/^SUBLEVEL[[:space:]]*=.*/SUBLEVEL = 186/' Makefile
-
-          echo "Final kernel version:"
-          make kernelversion || true
-
-      - name: Check changes
-        run: |
-          echo "===== GIT STATUS ====="
-          git status --short
+          git diff \
+            --binary \
+            "$BASE_COMMIT" \
+            "$TARGET_COMMIT" \
+            > stable-4.14.141-to-4.14.186.patch
 
           echo
-          echo "===== CONFLICT FILES ====="
-          git diff --name-only --diff-filter=U || true
+          echo "Patch generated:"
+          ls -lh stable-4.14.141-to-4.14.186.patch
 
-      - name: Save upgrade result
+      - name: Apply stable patch
+        run: |
+          set +e
+
+          echo "Applying Linux stable changes..."
+
+          git apply \
+            --3way \
+            --whitespace=fix \
+            stable-4.14.141-to-4.14.186.patch
+
+          STATUS=$?
+
+          if [ "$STATUS" -ne 0 ]; then
+            echo "PATCH_FAILED=true" >> "$GITHUB_ENV"
+
+            echo
+            echo "Patch conflicts detected."
+            echo
+            echo "Conflicting files:"
+            git diff --name-only --diff-filter=U || true
+
+            exit 0
+          fi
+
+          echo "PATCH_FAILED=false" >> "$GITHUB_ENV"
+
+          echo "Patch applied successfully."
+
+      - name: Set kernel version
+        if: env.PATCH_FAILED != 'true'
+        run: |
+          sed -i \
+            's/^SUBLEVEL[[:space:]]*=.*/SUBLEVEL = 186/' \
+            Makefile
+
+          echo "Kernel version:"
+          make kernelversion || true
+
+      - name: Verify kernel version
+        if: env.PATCH_FAILED != 'true'
+        run: |
+          VERSION=$(make kernelversion)
+
+          echo "Detected version: $VERSION"
+
+          if [ "$VERSION" != "4.14.186" ]; then
+            echo "Wrong kernel version."
+            exit 1
+          fi
+
+          echo "Kernel version verified."
+
+      - name: Create report
+        if: always()
+        run: |
+          echo "Realme 3i Kernel Upgrade Report" > upgrade-report.txt
+          echo "================================" >> upgrade-report.txt
+          echo >> upgrade-report.txt
+
+          echo "Base commit:" >> upgrade-report.txt
+          echo "$BASE_COMMIT" >> upgrade-report.txt
+
+          echo >> upgrade-report.txt
+
+          echo "Target commit:" >> upgrade-report.txt
+          echo "$TARGET_COMMIT" >> upgrade-report.txt
+
+          echo >> upgrade-report.txt
+
+          echo "Patch failed:" >> upgrade-report.txt
+          echo "${PATCH_FAILED:-unknown}" >> upgrade-report.txt
+
+          echo >> upgrade-report.txt
+
+          echo "Conflicting files:" >> upgrade-report.txt
+          git diff --name-only --diff-filter=U \
+            >> upgrade-report.txt || true
+
+      - name: Upload result
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: kernel-4.14.186-upgrade-result
           path: |
             stable-4.14.141-to-4.14.186.patch
+            upgrade-report.txt
+            **/*.rej
 
       - name: Commit upgraded source
+        if: env.PATCH_FAILED != 'true'
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
           git add -A
 
-          git commit -m "Upgrade kernel to Linux 4.14.186" || true
+          git commit \
+            -m "Upgrade Realme 3i kernel to Linux 4.14.186"
 
-          git push origin HEAD:kernel-4.14.186 || true
+      - name: Push upgraded branch
+        if: env.PATCH_FAILED != 'true'
+        run: |
+          git push origin HEAD:kernel-4.14.186
+
+      - name: Stop on conflicts
+        if: env.PATCH_FAILED == 'true'
+        run: |
+          echo "Linux stable patch has conflicts with the Realme/MTK vendor tree."
+          echo "See the uploaded artifact for the conflict report."
+          exit 1
